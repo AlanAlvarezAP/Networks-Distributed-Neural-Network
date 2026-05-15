@@ -13,7 +13,7 @@ Development of the final project for the CS231 - Networks and Communication cour
     - Sebastian Sanchez Cuno
 ## Protocol Proposal
 
-For the given project, we proposed the next protocol who ensures the **Realiable Data Transfer** 
+For the given project, we proposed the next protocol who ensures the **Reliable Data Transfer** 
 
 | ACK(1/0)   | Size of Sequence Number | Sequence Number | Size of Sequence Number ACK | Sequence Number ACK | Order(1,2,3) | Data data | Hash |
 |-------|-------------|-------------|-------------|-------------|-------------|---------------|-------------|
