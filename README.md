@@ -20,9 +20,9 @@ TimeoutInterval = EstimatedRTT + 4 · DevRTT
 
 ---
 
-## 🔄 Algoritmo de Jacobson / Karels
+## 🔄 Jacobson / Karels Algorithm
 
-Nueva forma de calcular el promedio de RTT:
+A new way to calculate the RTT average:
 
 ```math
 Diff = sampleRTT - EstRTT
@@ -36,15 +36,15 @@ EstRTT = EstRTT + ( δ × Diff )
 Dev = Dev + δ ( |Diff| - Dev )
 ```
 
-> donde **δ** es un factor entre 0 y 1 (Por ejemplo, **1/8**)
+> where **δ** is a factor between 0 and 1 (for example, **1/8**)
 
-- Considera la **varianza** cuando fijamos el timeout:
+- Takes **variance** into account when setting the timeout:
 
 ```math
 TimeOut = μ × EstRTT + φ × Dev
 ```
 
-> donde **μ = 1** y **φ = 4**
+> where **μ = 1** and **φ = 4**
 
 
 
