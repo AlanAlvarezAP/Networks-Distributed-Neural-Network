@@ -1,28 +1,27 @@
 # Networks-Distributed-Neural-Network
 Development of the final project for the CS231 - Networks and Communication course
 
-## ⏱️ Setting and Managing the Retransmission Timeout Interval
+## General information
+  - **Course**: Networks and Communications
+  - **Professor**: Julio Omar Santiesteban
+  - **Semester**: 2026-1
+  - **Group**: CCOMP7-1
+  - **Students**:
+    - Alan Alvarez Puma
+    - Maurizio Luque Soto
+    - Sofia Pinto Galvez
+    - Sebastian Sanchez Cuno
+## Protocol Proposal
 
-Given values of `EstimatedRTT` and `DevRTT`, what value should be used for TCP's timeout interval? Clearly, the interval should be greater than or equal to `EstimatedRTT`, or unnecessary retransmissions would be sent. But the timeout interval should not be too much larger than `EstimatedRTT`; otherwise, when a segment is lost, TCP would not quickly retransmit the segment, leading to large data transfer delays.
+For the given project, we proposed the next protocol who ensures the **Realiable Data Transfer** 
 
-It is therefore desirable to set the timeout equal to the `EstimatedRTT` plus some margin. The margin should be large when there is a lot of fluctuation in the `SampleRTT` values; it should be small when there is little fluctuation. The value of `DevRTT` should thus come into play here. All of these considerations are taken into account in TCP's method for determining the retransmission timeout interval:
-
-```math
-TimeoutInterval = EstimatedRTT + 4 · DevRTT
-```
-
-> An initial `TimeoutInterval` value of **1 second** is recommended [RFC 6298](https://www.rfc-editor.org/rfc/rfc6298).
-
-### 📌 Key Behavior
-
-- When a **timeout occurs**, the value of `TimeoutInterval` is **doubled** to avoid a premature timeout for a subsequent segment that will soon be acknowledged.
-- However, as soon as a **segment is received** and `EstimatedRTT` is updated, the `TimeoutInterval` is again computed using the formula above.
+| ACK(1/0)   | Size of Sequence Number | Sequence Number | Size of Sequence Number ACK | Sequence Number ACK | Order(1,2,3) | Data data | Hash |
+|-------|-------------|-------------|-------------|-------------|-------------|---------------|-------------|
 
 ---
+## Jacobson / Karels Algorithm
 
-## 🔄 Jacobson / Karels Algorithm
-
-A new way to calculate the RTT average:
+The Jacobson/Karels algorithm let us set and manage the retransmission timeout interval using:
 
 ```math
 Diff = sampleRTT - EstRTT
@@ -46,6 +45,18 @@ TimeOut = μ × EstRTT + φ × Dev
 
 > where **μ = 1** and **φ = 4**
 
+### Setting and Managing the Retransmission Timeout Interval
 
+
+```math
+TimeoutInterval = EstimatedRTT + 4 · DevRTT
+```
+
+> An initial `TimeoutInterval` value of **1 second** is recommended [RFC 6298](https://www.rfc-editor.org/rfc/rfc6298).
+
+### Key Behavior
+
+- When a **timeout occurs**, the value of `TimeoutInterval` is **doubled** to avoid a premature timeout for a subsequent segment that will soon be acknowledged.
+- However, as soon as a **segment is received** and `EstimatedRTT` is updated, the `TimeoutInterval` is again computed using the formula above.
 
 
