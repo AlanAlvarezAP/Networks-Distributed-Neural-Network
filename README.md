@@ -45,13 +45,6 @@ TimeOut = μ × EstRTT + φ × Dev
 
 > where **μ = 1** and **φ = 4**
 
-### Setting and Managing the Retransmission Timeout Interval
-
-
-```math
-TimeoutInterval = EstimatedRTT + 4 · DevRTT
-```
-
 > An initial `TimeoutInterval` value of **1 second** is recommended [RFC 6298](https://www.rfc-editor.org/rfc/rfc6298).
 
 ### Key Behavior
