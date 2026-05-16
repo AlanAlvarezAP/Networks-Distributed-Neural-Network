@@ -3,7 +3,7 @@ Development of the final project for the CS231 - Networks and Communication cour
 
 ## General information
   - **Course**: Networks and Communications
-  - **Professor**: Julio Omar Santiesteban
+  - **Professor**: Julio Omar Santisteban
   - **Semester**: 2026-1
   - **Group**: CCOMP7-1
   - **Students**:
