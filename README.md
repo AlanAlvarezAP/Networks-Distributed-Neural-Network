@@ -15,8 +15,20 @@ Development of the final project for the CS231 - Networks and Communication cour
 
 For the given project, we proposed the next protocol who ensures the **Reliable Data Transfer** in all data distribución.
 
-| ACK(1/0)   | Size of Sequence Number | Sequence Number | Size of Sequence Number ACK | Sequence Number ACK | Order(1,2,3) | Data data | Hash |
-|-------|-------------|-------------|-------------|-------------|-------------|---------------|-------------|
+## For Normal data
+
+| 1 Byte   | 5 Bytes | Variable  | 2 Bytes | 3 Bytes | Variable | 2 Bytes |
+|-------|-------------|-------------|-------------|---------------|---------------|-------------|
+| P   | Size of Sequence Number | Sequence Number  | Order(1,2,..,N) | Payload size | Payload data | Hash (Checksum) |
+> Important to notice is that the datagrams will have a size of 500 bytes where the remaining space in the packet is going to be used for padding with the symbol '#'
+
+
+## For ACKs
+| 1 Byte | 5 Bytes | Variable | 2 Bytes |
+|-------------|-------------|-------------|-------------|
+| A | Size of Sequence Number ACK | Sequence Number ACK | Hash (Checksum) | 
+
+> Also to get the NACK where going to use the timeout as a mechanism for NACK
 
 ---
 ## Jacobson / Karels Algorithm
