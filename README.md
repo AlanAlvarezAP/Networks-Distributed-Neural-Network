@@ -17,18 +17,21 @@ For the given project, we proposed the next protocol who ensures the **Reliable 
 
 ## For Normal data
 
-| 1 Byte   | 5 Bytes | Variable  | 2 Bytes | 3 Bytes | Variable | 2 Bytes |
-|-------|-------------|-------------|-------------|---------------|---------------|-------------|
-| P   | Size of Sequence Number | Sequence Number  | Order(1,2,..,N) | Payload size | Payload data | Hash (Checksum) |
+| 3 Bytes   | 3 Bytes   | 5 Bytes   | 1 Byte   | 5 Bytes | 3 Bytes | Variable | 2 Bytes |
+|-------------|-------------|-------------|-------|-------------|---------------|---------------|-------------|
+| Total packets   | Order(1,2,..,N)   | Sequence Number of data   | P   | Sequence Number | Payload size | Payload data | Hash (Checksum) |
 > Important to notice is that the datagrams will have a size of 500 bytes where the remaining space in the packet is going to be used for padding with the symbol '#'
 
 
 ## For ACKs
-| 1 Byte | 5 Bytes | Variable | 2 Bytes |
+| 1 Byte | 5 Bytes | 3 Bytes | 3 Bytes |
 |-------------|-------------|-------------|-------------|
-| A | Size of Sequence Number ACK | Sequence Number ACK | Hash (Checksum) | 
+| A | Sequence Number ACK | Total packets segment | Current packet segment |
 
-> Also to get the NACK where going to use the timeout as a mechanism for NACK
+## For NACKs
+| 1 Byte | 5 Bytes | 3 Bytes | 3 Bytes |
+|-------------|-------------|-------------|-------------|
+| N | Sequence Number NACK | Total packets segment | Current packet segment |
 
 ---
 ## Jacobson / Karels Algorithm
