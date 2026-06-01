@@ -17,11 +17,15 @@ For the given project, we proposed the next protocol who ensures the **Reliable 
 
 ## For Normal data
 
-| 3 Bytes   | 3 Bytes   | 5 Bytes   | 1 Byte   | 5 Bytes | 3 Bytes | Variable | 2 Bytes |
-|-------------|-------------|-------------|-------|-------------|---------------|---------------|-------------|
-| Total packets   | Order(1,2,..,N)   | Sequence Number of data   | P   | Sequence Number | Payload size | Payload data | Hash (Checksum) |
+| 1 Byte | 3 Bytes   | 4 Bytes   | 5 Bytes   | 1 Byte  | 3 Bytes | Variable | 3 Bytes | Variable | 20 Bytes | Variable | 
+|-------------|-------------|-------------|-------|-------------|---------------|-------------|-------------|-------------|---------------|-------------|
+| Hash (Checksum) | Total packets   | Order(1,2,..,N)   | Sequence Number of data   | P | Nickname size | Nickname origin | Nickname destination size | Nickname destination | Payload size | Payload data | 
 > Important to notice is that the datagrams will have a size of 500 bytes where the remaining space in the packet is going to be used for padding with the symbol '#'
 
+In the next fragmented datagrams, are going to only have Hash, Total Packets, Order and Sequence Number the rest are going to be fill with the data and padding
+| 1 Byte | 3 Bytes   | 4 Bytes   | 5 Bytes   | Variable | 
+|-------------|-------------|-------------|--------------|-------------|
+| Hash (Checksum) | Total packets   | Order(1,2,..,N)   | Sequence Number of data   | Payload data | 
 
 ## For ACKs
 | 1 Byte | 5 Bytes | 3 Bytes | 3 Bytes |
