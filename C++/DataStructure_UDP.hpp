@@ -90,44 +90,6 @@ struct ProtocolFormat{
 };
 
 
-struct TransferState {
-    std::string destination;
-	std::string file_name;
-    std::string origin;
-	long long total_size   = 0;
-	int last_seq = -1;
-    bool last_received = false;
-	char action = 0;
-    std::vector<std::pair<int,std::string>> fragments;
-};
-
-void Send_OK(int socket,sockaddr_in& addr){
-    ProtocolFormat p{'0',11,0,'K',0,"",0,"",0,"",0,"",0,""};
-
-    std::string packet = p.ConstructDatagram();
-
-    while(packet.size() < DATAGRAM_SIZE){
-        packet.push_back('#');
-	}
-
-    packet[0] = p.Calculate_Checksum_Fragments(packet);
-
-    sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
-}
-
-void Send_Error(int socket,sockaddr_in& addr,const std::string& msg){
-    ProtocolFormat p{'0',11,0,'E',0,"",0,"",(int)msg.size(),msg,0,"",0,""};
-
-    std::string packet = p.ConstructDatagram();
-
-    while(packet.size() < DATAGRAM_SIZE){
-        packet.push_back('#');
-	}
-
-    packet[0] = p.Calculate_Checksum_Fragments(packet);
-
-    sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
-}
 
 void print(const std::unordered_map<std::string,sockaddr_in>& clientes){
 	std::cout << "================================" << std::endl;
@@ -140,7 +102,7 @@ void print(const std::unordered_map<std::string,sockaddr_in>& clientes){
 class Server_Protocols_UDP {
 public:
 	std::unordered_map<std::string, sockaddr_in> client_map;
-	std::unordered_map<std::string, TransferState> pending_transfers;
+	std::unordered_map<std::string, ClientInfo> pending_transfers;
 public:
 
     std::string Login(const std::string& buffer, int server_socket, sockaddr_in& client_addr) {
@@ -157,7 +119,6 @@ public:
 		char calculated = Calculate_Checksum(buffer.substr(7, DATAGRAM_SIZE - 7));
 	    if(hash != calculated){
 			std::string error_msg = "[WARNING] CHECKSUM";
-			Send_Error(server_socket,client_addr,error_msg);
 	    }
 	   
 	   	int size_origin,size_dest,size_msg;
@@ -417,7 +378,7 @@ class Client_Protocols_UDP {
 public:
     bool logging_status = false, running = false,waiting_ACK=false;
 	std::string final_name,pending_name;
-	std::unordered_map<std::string, TransferState> pending_transfers;
+	std::unordered_map<std::string, ClientInfo> pending_transfers;
 public:
     void Error(const std::string& buffer) {
         int pos = 8;
