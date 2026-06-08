@@ -83,7 +83,7 @@ struct ProtocolFormat{
 		return Calculate_Checksum(packet.substr(HEADER_SIZE,packet.size()-HEADER_SIZE));
 	}
 
-	void ParseProtocol(const std::string& buffer,char check_proto){
+	bool ParseProtocol(const std::string& buffer,char check_proto){
 		int pos = 0;
 		this->hash=buffer[0];
 	   	pos += 1;
@@ -103,7 +103,7 @@ struct ProtocolFormat{
 		this->action = buffer[pos++];
 		
 		if(this->action != check_proto){
-			return;
+			return false;
 		}
 
 
@@ -112,10 +112,12 @@ struct ProtocolFormat{
 		this->nickname=buffer.substr(pos,this->nickname_size);
 		pos += this->nickname_size;
 		
-		this->matrix_size = std::atoi(buffer.substr(pos,20).c_str());
+		this->matrix_size = std::atoll(buffer.substr(pos,20).c_str());
 		pos += 20;
 		this->matrixcontent = buffer.substr(pos,this->matrix_size);
 		pos+=this->matrix_size;
+
+		return true;
 	}
 };
 
@@ -164,7 +166,10 @@ public:
 
     std::string Login(const std::string& buffer, int server_socket, sockaddr_in& client_addr) {
 		ProtocolFormat proto;
-		proto.ParseProtocol(buffer,'L');
+		if(!proto.ParseProtocol(buffer,'L')){
+			return "";
+		}
+
 
 		if(pending_transfers[proto.nickname].client_datagrams.find(proto.datagram_id) == pending_transfers[proto.nickname].client_datagrams.end()){
 			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].total_fragments= proto.total_packets;
@@ -192,6 +197,13 @@ public:
 			    written += to_write;
 			}
 			pending_transfers.erase(new_buff);
+
+			if(client_map.find(new_buff) != client_map.end()){
+				std::string error_msg = "ERROR nickname already exists";
+				std::cout << error_msg << std::endl;
+				Send_Error(server_socket,client_addr,error_msg);
+				return "";
+			}
 			client_map[new_buff] = client_addr;
 	        print(client_map);
 		}
@@ -201,7 +213,9 @@ public:
 
 	void Logout(const std::string& buffer,int server_socket,sockaddr_in& client_addr){
 	    ProtocolFormat proto;
-		proto.ParseProtocol(buffer,'O');
+		if(!proto.ParseProtocol(buffer,'O')){
+			return;
+		}
 	    bool found = false;
 
 		std::cout << "===================================================================" << std::endl;
@@ -227,12 +241,14 @@ public:
 
     void Broadcast(const std::string& buffer,int server_socket,sockaddr_in& client_addr){
 		ProtocolFormat proto;
-		proto.ParseProtocol(buffer,'B');
+		if(!proto.ParseProtocol(buffer,'B')){
+			return;
+		}
 
 		std::string cp=buffer;
 		if(pending_transfers[proto.nickname].client_datagrams.find(proto.datagram_id) == pending_transfers[proto.nickname].client_datagrams.end()){
 			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].total_fragments= proto.total_packets;
-			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].matrix_size = proto.nickname_size;
+			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
 			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
 			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
 		}
@@ -320,7 +336,7 @@ public:
 
 		size_matrix= std::atoi(buffer.substr(pos,20).c_str());
 		pos+= 20;
-		matrix_content=std::atoi(buffer.substr(pos,size_matrix).c_str());
+		matrix_content=buffer.substr(pos,size_matrix).c_str();
 		pos += size_matrix;
 	
 
@@ -467,12 +483,14 @@ public:
 
 	void Broadcast_react(const std::string& buffer,sockaddr_in& server_addr){
 	    ProtocolFormat proto;
-		proto.ParseProtocol(buffer,'b');
+		if(!proto.ParseProtocol(buffer,'b')){
+			return;
+		}
 
 
 		if(pending_transfers.client_datagrams.find(proto.datagram_id) == pending_transfers.client_datagrams.end()){
 			pending_transfers.client_datagrams[proto.datagram_id].total_fragments= proto.total_packets;
-			pending_transfers.client_datagrams[proto.datagram_id].matrix_size = proto.nickname_size;
+			pending_transfers.client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
 			pending_transfers.client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
 			pending_transfers.client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
 		}
