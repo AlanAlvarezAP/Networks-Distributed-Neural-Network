@@ -20,18 +20,7 @@ void read_thread_UDP(int SocketFD){
         int order      = std::atoi(datagram.substr(1, 2).c_str());
         int seq_number = std::atoi(datagram.substr(3, 4).c_str());
 
-        char action;
-        if(order == 1 || (order == 11 && seq_number == 0)){
-            action = datagram[7];
-        } else {
-            auto it = sv_UDP.pending_transfers.find(senderKey);
-            if(it == sv_UDP.pending_transfers.end()){
-                std::cout << "ERROR no state for " << senderKey << std::endl;
-                continue;
-            }
-            action = it->second.action;
-            
-        }
+        char action=datagram[14];
 
         sv_UDP.Cases_Server(action, datagram, SocketFD, sender);
         

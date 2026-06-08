@@ -12,6 +12,7 @@
 #include <thread>
 #include <chrono>
 #include <unordered_map>
+#include <map>
 #include <algorithm>
 #include <limits>
 #include <fstream>
@@ -85,10 +86,10 @@ struct ProtocolFormat{
 
 
 
-void print(const std::unordered_map<sockaddr_in,std::string>& clients){
+void print(const std::unordered_map<std::string,sockaddr_in>& clients){
 	std::cout << "================================" << std::endl;
 	for(const auto& client : clients){
-	    std::cout << "ID: " << client.second << std::endl;
+	    std::cout << "ID: " << client.first << std::endl;
 	}
 	std::cout << "================================" << std::endl;
 }
@@ -131,7 +132,7 @@ public:
 		pos += 3;
 	
 		nickname=buffer.substr(pos,size_nickname);
-		pos += size_origin;
+		pos += size_nickname;
 		
 		if (client_map.find(nickname) != client_map.end()) {
 			std::string error_msg = "ERROR nickname already in server";
@@ -170,6 +171,69 @@ public:
 		
         return nickname;
     }
+
+	void Logout(const std::string& buffer,int server_socket,sockaddr_in& client_addr){
+	    int pos = 0;
+		char hash=buffer[0];
+	   	pos += 1;
+		int datagram_id = std::atoi(buffer.substr(pos,4).c_str());
+		pos += 4;
+		int total_packets = std::atoi(buffer.substr(pos,4).c_str());
+		pos += 4;
+		int seq_number = std::atoi(buffer.substr(pos,5).c_str());
+		pos += 5;
+
+		char calculated = Calculate_Checksum(buffer.substr(HEADER_SIZE, DATAGRAM_SIZE - HEADER_SIZE));
+	    if(hash != calculated){
+			std::string error_msg = "[WARNING] CHECKSUM";
+			std::cout << error_msg << std::endl;
+	    }
+	   
+	   	int size_nickname;
+	    long long size_matrix;
+	   	char protocol_type;
+	   	std::string nickname,matrix_content;
+		protocol_type = buffer[pos++];
+		
+	    if(protocol_type != 'O'){
+	        std::string error_msg = "ERROR INVALID LOGOUT TYPE";
+			std::cout << error_msg << std::endl;
+	        return;
+	    }
+	
+		size_nickname =std::atoi(buffer.substr(pos,3).c_str());
+		pos += 3;
+	
+		nickname=buffer.substr(pos,size_nickname);
+		pos += size_nickname;
+		
+		if (client_map.find(nickname) != client_map.end()) {
+			std::string error_msg = "ERROR nickname already in server";
+			std::cout << error_msg << std::endl;
+			return;
+		}
+		pos += 20;
+	    bool found = false;
+
+		std::cout << "===================================================================" << std::endl;
+	   	std::cout << "Server received datagram # " << seq_number << " with the content | " << buffer << std::endl;
+	   	std::cout << "===================================================================" << std::endl;
+	    for(auto it = client_map.begin();it != client_map.end();++it){
+	        if(it->second.sin_addr.s_addr ==client_addr.sin_addr.s_addr &&it->second.sin_port ==client_addr.sin_port){
+	            found = true;
+	            std::cout<< "User disconnected -> "<< it->first<< std::endl;
+	            client_map.erase(it);
+	            break;
+	        }
+	    }
+	
+	    if(!found){
+			std::string error_msg = "ERROR USER NOT LOGGED";
+			std::cout << error_msg << std::endl;
+	        return;
+	    }
+	    print(client_map);
+	}
 
     /*void Broadcast(const std::string& buffer,int server_socket,sockaddr_in& client_addr){
 	    std::string senderKey = GetSenderKey(client_addr);
@@ -274,57 +338,7 @@ public:
 	}
 
 
-    void Logout(const std::string& buffer,int server_socket,sockaddr_in& client_addr){
-	    int pos = 0;
-	    char hash = buffer[0];
-	    pos += 1;
-	    int order = std::atoi(buffer.substr(pos,2).c_str());
-	    pos += 2;
-	    int seq_number = std::atoi(buffer.substr(pos,4).c_str());
-	    pos += 4;
-	    char calculated =Calculate_Checksum(buffer.substr(7, DATAGRAM_SIZE - 7));
-	
-	    if(hash != calculated){
-	        Send_Error(server_socket,client_addr,"ERROR CHECKSUM");
-	    }
-	
-	    if(!(order == 11 && seq_number == 0)){
-	        Send_Error(server_socket,client_addr,"ERROR INVALID LOGOUT FORMAT");
-	        return;
-	    }
-	
-	    char protocol_type = buffer[pos++];
-	    if(protocol_type != 'O'){
-	        Send_Error(server_socket,client_addr,"ERROR INVALID LOGOUT TYPE");
-	        return;
-	    }
-	    std::string nickname;
-	    int nickname_size =std::atoi(buffer.substr(pos,3).c_str());
-	    pos += 3;
-	
-	    nickname =buffer.substr(pos,nickname_size);
-	    pos += nickname_size;
-	    bool found = false;
-
-		std::cout << "===================================================================" << std::endl;
-	   	std::cout << "Server received datagram # " << seq_number << " with the content | " << buffer << std::endl;
-	   	std::cout << "===================================================================" << std::endl;
-	    for(auto it = client_map.begin();it != client_map.end();++it){
-	        if(it->second.sin_addr.s_addr ==client_addr.sin_addr.s_addr &&it->second.sin_port ==client_addr.sin_port){
-	            found = true;
-	            std::cout<< "User disconnected -> "<< it->first<< std::endl;
-	            client_map.erase(it);
-	            break;
-	        }
-	    }
-	
-	    if(!found){
-	        Send_Error(server_socket,client_addr,"ERROR USER NOT LOGGED");
-	        return;
-	    }
-	    Send_OK(server_socket, client_addr);
-	    print(client_map);
-	}*/
+    */
 
     void Cases_Server(char type,const std::string& buffer, int server_socket, sockaddr_in& client_addr) {
         switch (type) {
@@ -336,10 +350,11 @@ public:
                 Logout(buffer,server_socket, client_addr);
                 break;
             }
+			/*
             case 'B': {
                 Broadcast(buffer, server_socket, client_addr);
                 break;
-            }
+            }*/
             default: {
                 std::cout << "This protocol is not registered in Server :( " << std::endl;
                 break;
@@ -408,17 +423,17 @@ public:
 		packet[0]=protocol.hash=protocol.Calculate_Checksum_Fragments(packet);
 
 		ClientInfo cf;
-		cf[actual_datagram_id].total_fragments = total_fragments;
-		cf[actual_datagram_id].matrix_size = pending_name.size();
-		cf[actual_datagram_id].packets.resize(total_fragments);
-		cf[actual_datagram_id].acked.resize(total_fragments,false);
+		cf.client_datagrams[actual_datagram_id].total_fragments = total_fragments;
+		cf.client_datagrams[actual_datagram_id].matrix_size = pending_name.size();
+		cf.client_datagrams[actual_datagram_id].packets.resize(total_fragments);
+		cf.client_datagrams[actual_datagram_id].acked.resize(total_fragments,false);
 
 		std::cout << "=======================================================" << std::endl;
 		std::cout << "Client Sending from -> " << protocol.nickname << " to server with the datagram format of" << std::endl;
 		std::cout << packet << std::endl;
 		std::cout << "=======================================================" << std::endl;
 		
-		cf[actual_datagram_id].packets[0] = packet;
+		cf.client_datagrams[actual_datagram_id].packets[0] = packet;
 		sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
 		int start = current_size;
@@ -438,7 +453,7 @@ public:
 			std::cout << "=======================================================" << std::endl;
 			std::cout << "Client Sending ----> Fragment #" << i+1 << " | " << packet_2 << std::endl;
 			std::cout << "=======================================================" << std::endl;
-			cf[actual_datagram_id].packets[i] = packet_2;
+			cf.client_datagrams[actual_datagram_id].packets[i] = packet_2;
 	        sendto(client_socket,packet_2.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
 			start += frag_size;
@@ -514,7 +529,7 @@ public:
 	    }
     }
 
-void Broadcast_react(const std::string& buffer,sockaddr_in& server_addr){
+	void Broadcast_react(const std::string& buffer,sockaddr_in& server_addr){
 	    std::string senderKey = GetSenderKey(server_addr);
 	    int pos = 0;
 	
@@ -616,7 +631,7 @@ void Broadcast_react(const std::string& buffer,sockaddr_in& server_addr){
             case 'O': {
                 logging_status = false;
                 running = false;
-                ProtocolFormat protocol{'0',11,0,'O',(int)final_name.size(),final_name,0,"",0,"",0,"",0,""};
+				ProtocolFormat protocol{'0',actual_datagram_id++,1,0,'O',(int)final_name.size(),final_name,0,""};
 			    std::string packet = protocol.ConstructDatagram();
 			
 			    while(packet.size() < DATAGRAM_SIZE){
@@ -627,7 +642,7 @@ void Broadcast_react(const std::string& buffer,sockaddr_in& server_addr){
 			    sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 			    break;
             }
-            case 'B': {
+			/*case 'B': {
                 Broadcast(client_socket, server_addr);
                 break;
             }
@@ -651,7 +666,7 @@ void Broadcast_react(const std::string& buffer,sockaddr_in& server_addr){
             case 'b': {
                 Broadcast_react(buffer,server_addr);
                 break;
-            }
+            }*/
             default: {
                 std::cout << "This protocol is not registered in Client :( " << std::endl;
                 break;
