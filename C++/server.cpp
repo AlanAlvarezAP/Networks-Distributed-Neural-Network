@@ -2,6 +2,19 @@
 #include "DataStructure_UDP.hpp"
 Server_Protocols_UDP sv_UDP;
 
+
+
+void print_server_menu(){
+    std::cout << "===================================" << std::endl;
+    std::cout << "|          Welcome to             |" << std::endl;
+    std::cout << "|      Matrix NN distribution     |" << std::endl;
+    std::cout << "|                                 |" << std::endl;
+    std::cout << "|  1. Load Matrix                 |" << std::endl;
+    std::cout << "|  2. Show Clients                |" << std::endl;
+    std::cout << "|  3. Exit                        |" << std::endl;
+    std::cout << "===================================" << std::endl;
+}
+
 void read_thread_UDP(int SocketFD){
     char buffer[500];
     sockaddr_in sender;
@@ -38,8 +51,42 @@ int main(void){
     stSockAddr.sin_addr.s_addr = INADDR_ANY;
  
     bind(ServerFD,(const struct sockaddr *)&stSockAddr, sizeof(struct sockaddr_in));
-    read_thread_UDP(ServerFD);
+
+    std::thread(read_thread_UDP,ServerFD).detach();
  
+    while(true){
+        int op;
+        print_server_menu();
+        std::cin >> op;
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(),'\n');
+
+        switch(op){
+            case 1:{
+                if(sv_UDP.client_map.size() < 3){
+                    std::cout<< "Need more clients !!! " << std::endl;
+                    break;
+                }
+                sv_UDP.Raw_Matrix_file(ServerFD);
+                break;
+            }
+
+            case 2:{
+                print(sv_UDP.client_map);
+                break;
+            }
+
+            case 3:{
+                close(ServerFD);
+                return 0;
+            }
+
+            default:{
+                std::cout<< "Invalid option" << std::endl;
+            }
+        }
+    }
+
+
     close(ServerFD);
     return 0;
 }

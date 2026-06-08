@@ -81,7 +81,7 @@ struct ProtocolFormat{
 		return std::string{hash}+number_to_string_2(datagram_id,4)+number_to_string_2(total_packets,4)+number_to_string_2(seq_number,5)+std::string{action}
 		+number_to_string_2(nickname_size,3)+nickname+number_to_string_2(matrix_size,20)+matrixcontent;
 	}
-	char Calculate_Checksum_Fragments(std::string& packet){
+	char Calculate_Checksum_Fragments(const std::string& packet){
 		return Calculate_Checksum(packet.substr(HEADER_SIZE,packet.size()-HEADER_SIZE));
 	}
 
@@ -96,8 +96,8 @@ struct ProtocolFormat{
 		this->seq_number = std::atoi(buffer.substr(pos,5).c_str());
 		pos += 5;
 
-		char calculated = Calculate_Checksum(buffer.substr(HEADER_SIZE, DATAGRAM_SIZE - HEADER_SIZE));
-	    if(hash != calculated){
+		char calculated = Calculate_Checksum_Fragments(buffer);
+	    if(this->hash != calculated){
 			std::string error_msg = "[WARNING] CHECKSUM";
 			std::cout << error_msg << std::endl;
 	    }
@@ -160,12 +160,70 @@ void print(const std::unordered_map<std::string,sockaddr_in>& clients){
 	std::cout << "================================" << std::endl;
 }
 
+/*void Reconstruct_Matrix(const std::string& buffer,std::vector<std::vector<double>>& matrix){
+	
+}*/
+
 class Server_Protocols_UDP {
 public:
 	std::unordered_map<std::string,sockaddr_in> client_map;
 	std::unordered_map<std::string, ClientInfo> pending_transfers;
 	std::mutex mtx;
+	std::atomic<int> actual_datagram_id=0;
 public:
+
+	void Raw_Matrix_file(int server_socket){
+		std::string path;
+
+		std::cout << "Give me the path to csv -> ";
+		std::getline(std::cin,path);
+
+		std::ifstream reader(path);
+
+		if(!reader.is_open()){
+			std::cout << "Couldn't open file\n";
+			return;
+		}
+
+		std::string matrix_data;
+		std::string line;
+
+		while(std::getline(reader,line)){
+			matrix_data += line;
+			matrix_data += '\n';
+		}
+
+		reader.close();
+
+		std::cout << "Matrix size -> " << matrix_data.size() << std::endl;
+
+		int datagram_id = actual_datagram_id++;
+
+		for(const auto& client : client_map){
+			int seq = 0;
+			long long header =HEADER_SIZE+3+0+20;
+			long long max_content =DATAGRAM_SIZE - header;
+			long long total_fragments =(matrix_data.size() + max_content - 1)/ max_content;
+			int start = 0;
+
+			for(int i=0;i<total_fragments;i++){
+				long long frag_size =std::min(max_content,(long long)matrix_data.size()-start);
+				std::string fragment =matrix_data.substr(start,frag_size);
+				ProtocolFormat protocol{'0',datagram_id,(int)total_fragments,seq++,'M',0,"",(long long)matrix_data.size(),fragment};
+				std::string packet =protocol.ConstructDatagram();
+
+				while(packet.size() < DATAGRAM_SIZE){
+					packet.push_back('#');
+				}
+
+				packet[0] =protocol.Calculate_Checksum_Fragments(packet);
+
+				sendto(server_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&client.second,sizeof(client.second));
+
+				start += frag_size;
+			}
+		}
+	}
 
     std::string Login(const std::string& buffer, int server_socket, sockaddr_in& client_addr) {
 		ProtocolFormat proto;
@@ -285,6 +343,52 @@ public:
 		
 	}
 
+	void Processed_Matrix(const std::string& buffer,int server_socket,sockaddr_in& client_addr){
+		ProtocolFormat proto;
+
+		if(!proto.ParseProtocol(buffer,'P')){
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(mtx);
+		std::string sender =GetSenderKey(client_addr);
+
+		if(pending_transfers[sender].client_datagrams.find(proto.datagram_id)==pending_transfers[sender].client_datagrams.end()){
+			pending_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
+			pending_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
+			pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
+			pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
+		}
+
+		auto& file =pending_transfers[sender].client_datagrams[proto.datagram_id];
+		file.packets[proto.seq_number] =proto.matrixcontent;
+		file.acked[proto.seq_number] = true;
+
+		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
+
+		if(!all){
+			return;
+		}
+
+		std::string result;
+		long long written = 0;
+
+		for(const auto& frag : file.packets){
+			long long remaining =file.matrix_size - written;
+			long long take =std::min((long long)frag.size(),remaining);
+
+			result += frag.substr(0,take);
+			written += take;
+		}
+
+		std::cout<< "===================================="<< std::endl;
+		std::cout << "RESULT FROM -> "<< sender << std::endl;
+		std::cout << result << std::endl;
+		std::cout << "====================================" << std::endl;
+
+		pending_transfers[sender].client_datagrams.erase(proto.datagram_id);
+	}
+
 
     void Cases_Server(char type,const std::string& buffer, int server_socket, sockaddr_in& client_addr) {
         switch (type) {
@@ -301,6 +405,10 @@ public:
                 Broadcast(buffer, server_socket, client_addr);
                 break;
             }
+			case 'P':{
+				Processed_Matrix(buffer,server_socket,client_addr);
+				break;
+			}
             default: {
                 std::cout << "This protocol is not registered in Server :( " << std::endl;
                 break;
@@ -351,7 +459,7 @@ public:
 	    int total_fragments = 1 + extra_fragments;
 	
 		
-		ProtocolFormat protocol{'0',actual_datagram_id,total_fragments,seq_numbers++,'L',(int)pending_name.size(),pending_name,0,""};
+		ProtocolFormat protocol{'0',actual_datagram_id,total_fragments,seq_numbers++,'L',(int)pending_name.size(),pending_name.substr(0,current_size),0,""};
 		
 		std::string packet=protocol.ConstructDatagram();
 		
@@ -399,107 +507,87 @@ public:
         actual_datagram_id++;
     }
 
-    void Broadcast(int client_socket, sockaddr_in& server_addr) {
-		std::string msg;
-        std::cout << "Give me the message to everyone -> ";
-        std::getline(std::cin, msg);
-		
-		int seq_numbers{0};
-	
-	    // First fragment
-		long long header=HEADER_SIZE+3+final_name.size()+20;
-		long long remaining_size_first=DATAGRAM_SIZE-header;
-		long long current_size =std::min(remaining_size_first,(long long)msg.size());
 
-	    long long total_remaining = (long long)msg.size() - current_size;
-	    long long max_content = DATAGRAM_SIZE - header;
-	    long long extra_fragments = (total_remaining + max_content - 1) / max_content;
-	    int total_fragments = 1 + extra_fragments;
-	
-		
-		ProtocolFormat protocol{'0',actual_datagram_id,total_fragments,seq_numbers++,'B',(int)final_name.size(),final_name,(long long)msg.size(),msg};
-		
-		std::string packet=protocol.ConstructDatagram();
-		
-		while(packet.size() < DATAGRAM_SIZE){
-			packet.push_back('#');
-		}
-		packet[0]=protocol.hash=protocol.Calculate_Checksum_Fragments(packet);
+	void Broadcast_Response(const std::string& result,int client_socket,sockaddr_in& server_addr){
+		int seq = 0;
 
-		ClientInfo cf;
-		cf.client_datagrams[actual_datagram_id].total_fragments = total_fragments;
-		cf.client_datagrams[actual_datagram_id].matrix_size = msg.size();
-		cf.client_datagrams[actual_datagram_id].packets.resize(total_fragments);
-		cf.client_datagrams[actual_datagram_id].acked.resize(total_fragments,false);
+		long long header =HEADER_SIZE+3+0+20;
+		long long max_content =DATAGRAM_SIZE - header;
+		long long total_fragments =(result.size()+max_content-1)/max_content;
 
-		std::cout << "=======================================================" << std::endl;
-		std::cout << "Client Sending from -> " << protocol.nickname << " to server with the datagram format of" << std::endl;
-		std::cout << packet << std::endl;
-		std::cout << "=======================================================" << std::endl;
-		
-		cf.client_datagrams[actual_datagram_id].packets[0] = packet;
-		sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
+		int start = 0;
+		for(int i=0;i<total_fragments;i++){
+			long long frag_size =std::min(max_content,(long long)result.size()-start);
+			std::string fragment =result.substr(start,frag_size);
+			std::cout << "=======================================================" << std::endl;
+			std::cout << "Client Sending Matrix ----> Fragment #" << i+1 << " | " << fragment << std::endl;
+			std::cout << "=======================================================" << std::endl;
+			ProtocolFormat protocol{'0',actual_datagram_id,(int)total_fragments,seq++,'P',0,"",(long long)result.size(),fragment};
+			std::string packet =protocol.ConstructDatagram();
 
-		int start = current_size;
-	    for(int i=1;i<total_fragments;i++){
-	        long long frag_size =std::min(max_content,(long long)msg.size()-start);
-	        std::string fragment =msg.substr(start,frag_size);
-
-			ProtocolFormat protocol_normal{'0',actual_datagram_id,total_fragments,seq_numbers++,'B',(int)final_name.size(),final_name,(long long)msg.size(),fragment};
-			
-			std::string packet_2=protocol_normal.ConstructDatagram();
-			while((int)packet_2.size() < 500){
-				packet_2.push_back('#');
+			while(packet.size() < DATAGRAM_SIZE){
+				packet.push_back('#');
 			}
-			
-	        packet_2[0]=protocol_normal.hash=protocol_normal.Calculate_Checksum_Fragments(packet_2);
 
-			std::cout << "=======================================================" << std::endl;
-			std::cout << "Client Sending ----> Fragment #" << i+1 << " | " << packet_2 << std::endl;
-			std::cout << "=======================================================" << std::endl;
-			cf.client_datagrams[actual_datagram_id].packets[i] = packet_2;
-	        sendto(client_socket,packet_2.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
+			packet[0] =protocol.Calculate_Checksum_Fragments(packet);
+			sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
 			start += frag_size;
-	    }
-        actual_datagram_id++;
-    }
-
-	void Broadcast_react(const std::string& buffer,sockaddr_in& server_addr){
-	    ProtocolFormat proto;
-		if(!proto.ParseProtocol(buffer,'b')){
-			return;
 		}
+		actual_datagram_id++;
+	}
 
+	void Matrix_react(const std::string& buffer,int client_socket,sockaddr_in& server_addr){
+		ProtocolFormat proto;
 
-		if(pending_transfers.client_datagrams.find(proto.datagram_id) == pending_transfers.client_datagrams.end()){
-			pending_transfers.client_datagrams[proto.datagram_id].total_fragments= proto.total_packets;
+		if(!proto.ParseProtocol(buffer,'M'))
+			return;
+
+		if(pending_transfers.client_datagrams.find(proto.datagram_id)== pending_transfers.client_datagrams.end()){
+			pending_transfers.client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
 			pending_transfers.client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
 			pending_transfers.client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
 			pending_transfers.client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
 		}
-		
-		pending_transfers.client_datagrams[proto.datagram_id].packets[proto.seq_number]=proto.matrixcontent;
-		pending_transfers.client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
-		
-	   	std::cout << "===================================================================" << std::endl;
-	   	std::cout << "Client received datagram # " << proto.seq_number << " with the content | " << buffer << std::endl;
-	   	std::cout << "===================================================================" << std::endl;
 
-		SentFile &file = pending_transfers.client_datagrams[proto.datagram_id];
-		bool all_acked = std::all_of(file.acked.begin(), file.acked.end(), [](bool b){ return b; });
-		if(all_acked){
-			std::string new_buff;
-			long long written = 0;
-			for(const auto& pac :file.packets){
-				long long remaining = file.matrix_size - written;
-				long long to_write = std::min((long long)pac.size(), remaining);
-				new_buff += pac.substr(0, to_write);
-				written += to_write;
-			}
-			std::cout << "Message from: " << proto.nickname<< " with a message of -> " << new_buff << std::endl;
-			pending_transfers.client_datagrams.erase(proto.datagram_id);
+		std::cout << "=======================================================" << std::endl;
+		std::cout << "Client Receiving Matrix ----> Fragment #" << proto.seq_number << " | " << buffer << std::endl;
+		std::cout << "=======================================================" << std::endl;
+
+		auto& file =pending_transfers.client_datagrams[proto.datagram_id];
+		file.packets[proto.seq_number] =proto.matrixcontent;
+		file.acked[proto.seq_number] = true;
+
+		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
+
+		if(!all){
+			return;
 		}
+		std::string matrix_text;
+
+		long long written = 0;
+
+		for(const auto& frag : file.packets){
+			long long remaining =file.matrix_size - written;
+			long long take =std::min((long long)frag.size(),remaining);
+			matrix_text += frag.substr(0,take);
+			written += take;
+		}
+
+
+		std::cout << "=======================================================" << std::endl;
+		std::cout << "Client Final Matrix | " << matrix_text << std::endl;
+		std::cout << "=======================================================" << std::endl;
+
+		pending_transfers.client_datagrams.erase(proto.datagram_id);
+
+		/*
+			OJITO AQUI MASOMENOS DEBERIA IR PYTHON
+		*/
+
+		std::string result = matrix_text;
+
+		Broadcast_Response(result,client_socket,server_addr);
 	}
 
     void Cases_Client_UDP(char type,const std::string& buffer, int client_socket, sockaddr_in& server_addr) {
@@ -539,14 +627,10 @@ public:
                 Error(buffer);
                 break;
 			}
-			case 'B': {
-                Broadcast(client_socket, server_addr);
-                break;
-            }
-            case 'b': {
-                Broadcast_react(buffer,server_addr);
-                break;
-            }
+			case 'M':{
+				Matrix_react(buffer,client_socket,server_addr);
+				break;
+			}
             default: {
                 std::cout << "This protocol is not registered in Client :( " << std::endl;
                 break;
