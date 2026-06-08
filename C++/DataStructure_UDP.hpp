@@ -264,6 +264,7 @@ public:
         }
 		
 		cp[14]='b';
+		cp[0]=proto.hash=proto.Calculate_Checksum_Fragments(cp);
 		pending_transfers[sender].client_datagrams[proto.datagram_id].packets[proto.seq_number]=cp;
 		pending_transfers[sender].client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
 		
@@ -354,7 +355,7 @@ public:
 		
 		std::string packet=protocol.ConstructDatagram();
 		
-		while(packet.size() < DATAGRAM_SIZE){
+		while((int)packet.size() < DATAGRAM_SIZE){
 			packet.push_back('#');
 		}
 		packet[0]=protocol.hash=protocol.Calculate_Checksum_Fragments(packet);
@@ -381,7 +382,7 @@ public:
 			ProtocolFormat protocol_normal{'0',actual_datagram_id,total_fragments,seq_numbers++,'L',(int)pending_name.size(),pending_name,0,""};
 			
 			std::string packet_2=protocol_normal.ConstructDatagram();
-			while((int)packet_2.size() < 500){
+			while((int)packet_2.size() < DATAGRAM_SIZE){
 				packet_2.push_back('#');
 			}
 			
@@ -406,17 +407,17 @@ public:
 		int seq_numbers{0};
 	
 	    // First fragment
-		int header=HEADER_SIZE+3+final_name.size()+20+msg.size();
-		int remaining_size_first=DATAGRAM_SIZE-header;
-		int current_size =std::min(remaining_size_first,(int)msg.size());
+		long long header=HEADER_SIZE+3+final_name.size()+20;
+		long long remaining_size_first=DATAGRAM_SIZE-header;
+		long long current_size =std::min(remaining_size_first,(long long)msg.size());
 
-	    int total_remaining = (int)msg.size() - current_size;
-	    int max_content = DATAGRAM_SIZE - header;
-	    int extra_fragments = (total_remaining + max_content - 1) / max_content;
+	    long long total_remaining = (long long)msg.size() - current_size;
+	    long long max_content = DATAGRAM_SIZE - header;
+	    long long extra_fragments = (total_remaining + max_content - 1) / max_content;
 	    int total_fragments = 1 + extra_fragments;
 	
 		
-		ProtocolFormat protocol{'0',actual_datagram_id,total_fragments,seq_numbers++,'B',(int)final_name.size(),final_name,(int)msg.size(),msg};
+		ProtocolFormat protocol{'0',actual_datagram_id,total_fragments,seq_numbers++,'B',(int)final_name.size(),final_name,(long long)msg.size(),msg};
 		
 		std::string packet=protocol.ConstructDatagram();
 		
@@ -441,10 +442,10 @@ public:
 
 		int start = current_size;
 	    for(int i=1;i<total_fragments;i++){
-	        int frag_size =std::min(max_content,(int)msg.size()-start);
+	        long long frag_size =std::min(max_content,(long long)msg.size()-start);
 	        std::string fragment =msg.substr(start,frag_size);
 
-			ProtocolFormat protocol_normal{'0',actual_datagram_id,total_fragments,seq_numbers++,'B',(int)final_name.size(),final_name,(int)msg.size(),msg};
+			ProtocolFormat protocol_normal{'0',actual_datagram_id,total_fragments,seq_numbers++,'B',(int)final_name.size(),final_name,(long long)msg.size(),fragment};
 			
 			std::string packet_2=protocol_normal.ConstructDatagram();
 			while((int)packet_2.size() < 500){
