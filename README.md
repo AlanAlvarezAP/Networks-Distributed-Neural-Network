@@ -28,8 +28,8 @@ For the given project, we proposed the next protocol who ensures the **Reliable 
 - L: Login of users
 - O: Logout of users
 - B: Broadcast the matrix
-- b: reaction of the broadcast in Clients
-- r: reaction of the result of the broadcast in server
+- M: reaction of the broadcast of the matrix in Clients
+- P: reaction of the result of the broadcast in server
 
 ## For ACKs
 | 1 Byte | 5 Bytes | 3 Bytes | 3 Bytes |
