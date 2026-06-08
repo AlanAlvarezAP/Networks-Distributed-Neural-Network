@@ -17,15 +17,19 @@ For the given project, we proposed the next protocol who ensures the **Reliable 
 
 ## For Normal data
 
-| 1 Byte | 3 Bytes   | 4 Bytes   | 5 Bytes   | 1 Byte  | 3 Bytes | Variable | 3 Bytes | Variable | 20 Bytes | Variable | 
-|-------------|-------------|-------------|-------|-------------|---------------|-------------|-------------|-------------|---------------|-------------|
-| Hash (Checksum) | Total packets   | Order(1,2,..,N)   | Sequence Number of data   | P | Nickname size | Nickname origin | Nickname destination size | Nickname destination | Payload size | Payload data | 
-> Important to notice is that the datagrams will have a size of 500 bytes where the remaining space in the packet is going to be used for padding with the symbol '#'
+| 1 Byte | 4 Bytes | 4 Bytes   | 4 Bytes   | 5 Bytes   | 1 Byte  | 3 Bytes | Variable  | 20 Bytes | Variable | 
+|-------------|-------------|-------------|-------------|-------|-------------|---------------|-------------|---------------|-------------|
+| Hash (Checksum) | Datagram_id | Total packets   | Order(1,2,..,N)   | Sequence Number of data   | Action | Nickname size | Nickname origin | Payload total size | Payload data | 
 
-In the next fragmented datagrams, are going to only have Hash, Total Packets, Order and Sequence Number the rest are going to be fill with the data and padding
-| 1 Byte | 3 Bytes   | 4 Bytes   | 5 Bytes   | Variable | 
-|-------------|-------------|-------------|--------------|-------------|
-| Hash (Checksum) | Total packets   | Order(1,2,..,N)   | Sequence Number of data   | Payload data | 
+> Important to notice is that the datagrams will have a size of 500 bytes where the remaining space in the packet is going to be used for padding with the symbol '#'  
+> This protocol is going to be used in all communications but some fields maybe blank or with 0 and also de action will change depending of the type of action
+
+**Actions in the project** 
+- L: Login of users
+- O: Logout of users
+- B: Broadcast the matrix
+- M: reaction of the broadcast of the matrix in Clients
+- P: reaction of the result of the broadcast in server
 
 ## For ACKs
 | 1 Byte | 5 Bytes | 3 Bytes | 3 Bytes |
