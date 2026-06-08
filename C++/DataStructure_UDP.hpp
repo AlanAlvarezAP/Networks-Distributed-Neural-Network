@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <limits>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 
 #define DATAGRAM_SIZE 500
@@ -162,6 +163,7 @@ class Server_Protocols_UDP {
 public:
 	std::unordered_map<std::string,sockaddr_in> client_map;
 	std::unordered_map<std::string, ClientInfo> pending_transfers;
+	std::mutex mtx;
 public:
 
     std::string Login(const std::string& buffer, int server_socket, sockaddr_in& client_addr) {
@@ -170,34 +172,44 @@ public:
 			return "";
 		}
 
+		std::lock_guard<std::mutex> lock(mtx);
+		std::string sender = GetSenderKey(client_addr);
 
-		if(pending_transfers[proto.nickname].client_datagrams.find(proto.datagram_id) == pending_transfers[proto.nickname].client_datagrams.end()){
-			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].total_fragments= proto.total_packets;
-			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].matrix_size = proto.nickname_size;
-			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
-			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
-		}
+        if(pending_transfers[sender].client_datagrams.find(proto.datagram_id) == pending_transfers[sender].client_datagrams.end()){
+            pending_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
+            pending_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
+            pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
+            pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
+        }
 
-		pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].packets[proto.seq_number]=proto.nickname;
-		pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
+		pending_transfers[sender].client_datagrams[proto.datagram_id].packets[proto.seq_number]=proto.nickname;
+		pending_transfers[sender].client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
 		
 	   	std::cout << "===================================================================" << std::endl;
 	   	std::cout << "Server received datagram # " << proto.seq_number << " with the content | " << buffer << std::endl;
 	   	std::cout << "===================================================================" << std::endl;
 
-		SentFile &file = pending_transfers[proto.nickname].client_datagrams[proto.datagram_id];
+		SentFile &file = pending_transfers[sender].client_datagrams[proto.datagram_id];
 		bool all_acked = std::all_of(file.acked.begin(), file.acked.end(), [](bool b){ return b; });
 		if(all_acked){
-			pending_transfers.erase(proto.nickname);
+			std::string assembled;
+            long long written = 0;
+            for(const auto &frag : file.packets){
+                long long remaining = file.matrix_size - written;
+                long long to_write = std::min((long long)frag.size(), remaining);
+                assembled += frag.substr(0, to_write);
+                written += to_write;
+            }
+            pending_transfers[sender].client_datagrams.erase(proto.datagram_id);
 
-			if(client_map.find(proto.nickname) != client_map.end()){
-				std::string error_msg = "ERROR nickname already exists";
-				std::cout << error_msg << std::endl;
-				Send_Error(server_socket,client_addr,error_msg);
-				return "";
-			}
-			client_map[proto.nickname] = client_addr;
-	        print(client_map);
+            if(client_map.find(assembled) != client_map.end()){
+                std::string msg = "ERROR nickname already exists";
+                Send_Error(server_socket, client_addr, msg);
+                return "";
+            }
+
+            client_map[assembled] = client_addr;
+            print_clients(client_map);
 		}
 		Send_OK(server_socket, client_addr);
         return proto.nickname;
@@ -208,6 +220,8 @@ public:
 		if(!proto.ParseProtocol(buffer,'O')){
 			return;
 		}
+		std::lock_guard<std::mutex> lock(mtx);
+		std::string sender = GetSenderKey(client_addr);
 	    bool found = false;
 
 		std::cout << "===================================================================" << std::endl;
@@ -237,23 +251,26 @@ public:
 			return;
 		}
 
+		std::lock_guard<std::mutex> lock(mtx);
 		std::string cp=buffer;
-		if(pending_transfers[proto.nickname].client_datagrams.find(proto.datagram_id) == pending_transfers[proto.nickname].client_datagrams.end()){
-			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].total_fragments= proto.total_packets;
-			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
-			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
-			pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
-		}
+		std::string sender = GetSenderKey(client_addr);
+
+        if(pending_transfers[sender].client_datagrams.find(proto.datagram_id) == pending_transfers[sender].client_datagrams.end()){
+            pending_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
+            pending_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
+            pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
+            pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
+        }
 		
 		cp[14]='b';
-		pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].packets[proto.seq_number]=cp;
-		pending_transfers[proto.nickname].client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
+		pending_transfers[sender].client_datagrams[proto.datagram_id].packets[proto.seq_number]=cp;
+		pending_transfers[sender].client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
 		
 	   	std::cout << "===================================================================" << std::endl;
 	   	std::cout << "Server received datagram # " << proto.seq_number << " with the content | " << buffer << std::endl;
 	   	std::cout << "===================================================================" << std::endl;
 
-		SentFile &file = pending_transfers[proto.nickname].client_datagrams[proto.datagram_id];
+		SentFile &file = pending_transfers[sender].client_datagrams[proto.datagram_id];
 		bool all_acked = std::all_of(file.acked.begin(), file.acked.end(), [](bool b){ return b; });
 		if(all_acked){
 			for(const auto& client : client_map){
@@ -261,7 +278,7 @@ public:
 					sendto(server_socket,pac.data(),DATAGRAM_SIZE,0,(sockaddr*)&client.second,sizeof(client.second));
 				}
 			}
-			pending_transfers[proto.nickname].client_datagrams.erase(proto.datagram_id);
+			pending_transfers[sender].client_datagrams.erase(proto.datagram_id);
 		}
 		
 	}
