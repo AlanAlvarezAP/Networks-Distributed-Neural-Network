@@ -298,45 +298,17 @@ public:
 	int actual_datagram_id=0;
 public:
     void Error(const std::string& buffer) {
-        int pos = 0;
-		char hash=buffer[0];
-	   	pos += 1;
-		int datagram_id = std::atoi(buffer.substr(pos,4).c_str());
-		pos += 4;
-		int total_packets = std::atoi(buffer.substr(pos,4).c_str());
-		pos += 4;
-		int seq_number = std::atoi(buffer.substr(pos,5).c_str());
-		pos += 5;
-
-		char calculated = Calculate_Checksum(buffer.substr(HEADER_SIZE, DATAGRAM_SIZE - HEADER_SIZE));
-	    if(hash != calculated){
-			std::string error_msg = "[WARNING] CHECKSUM";
-			std::cout << error_msg << std::endl;
-	    }
-	   
-	    long long size_matrix;
-	   	char protocol_type;
-	   	std::string matrix_content;
-		protocol_type = buffer[pos++];
-		
-	    if(protocol_type != 'E'){
-	        std::string error_msg = "ERROR INVALID Error TYPE";
-	        return;
-	    }
-	
-		pos += 3;
-
-		size_matrix= std::atoi(buffer.substr(pos,20).c_str());
-		pos+= 20;
-		matrix_content=buffer.substr(pos,size_matrix).c_str();
-		pos += size_matrix;
+        ProtocolFormat proto;
+		if(!proto.ParseProtocol(buffer,'E')){
+			return;
+		}
 	
 
 		std::cout << "===================================================================" << std::endl;
 	   	std::cout << "Client received error with the content | " << buffer << std::endl;
 	   	std::cout << "===================================================================" << std::endl;
 		
-	    std::cout<< "ERROR -> "<< matrix_content << std::endl;
+	    std::cout<< "ERROR -> "<< proto.matrixcontent << std::endl;
     }
 
     void Login(int client_socket, sockaddr_in& server_addr) {
