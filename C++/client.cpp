@@ -6,11 +6,10 @@ Client_Protocols_UDP clp_UDP;
 void print_menu() {
     std::cout << "===================================" << std::endl;
     std::cout << "|          Welcome to             |" << std::endl;
-    std::cout << "|        Chat Simulation          |" << std::endl;
+    std::cout << "|      Matrix NN distribution     |" << std::endl;
     std::cout << "|                                 |" << std::endl;
     std::cout << "|  1. Login                       |" << std::endl;
     std::cout << "|  2. Logout                      |" << std::endl;
-    std::cout << "|  3. Broadcast                   |" << std::endl;
     std::cout << "===================================" << std::endl;
 }
 
@@ -21,9 +20,6 @@ char Cast_Option(int option){
         }
 		case 2:{
 			return 'O';
-		}
-		case 3:{
-			return 'B';
 		}
 		default:{
 			return 'z';
