@@ -15,10 +15,6 @@ void read_thread_UDP(int SocketFD){
         }
 
         std::string datagram(buffer,n);
-        std::string senderKey = GetSenderKey(sender);
-
-        int order      = std::atoi(datagram.substr(1, 2).c_str());
-        int seq_number = std::atoi(datagram.substr(3, 4).c_str());
 
         char action=datagram[14];
 

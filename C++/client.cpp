@@ -11,9 +11,6 @@ void print_menu() {
     std::cout << "|  1. Login                       |" << std::endl;
     std::cout << "|  2. Logout                      |" << std::endl;
     std::cout << "|  3. Broadcast                   |" << std::endl;
-    std::cout << "|  4. Unicast                     |" << std::endl;
-    std::cout << "|  5. Receive all clients         |" << std::endl;
-    std::cout << "|  6. Send file                   |" << std::endl;
     std::cout << "===================================" << std::endl;
 }
 
@@ -28,15 +25,6 @@ char Cast_Option(int option){
 		case 3:{
 			return 'B';
 		}
-		case 4:{
-			return 'U';
-		}
-        case 5:{
-            return 'T';
-        }
-        case 6:{
-            return 'F';
-        }
 		default:{
 			return 'z';
 		}
@@ -55,10 +43,6 @@ void read_thread_UDP(int SocketFD){
         }
 
 		std::string datagram(buffer,n);
-		std::string senderKey = GetSenderKey(sender);
-
-        int order      = std::atoi(datagram.substr(1, 2).c_str());
-        int seq_number = std::atoi(datagram.substr(3, 4).c_str());
 
         char action=datagram[14];
 
