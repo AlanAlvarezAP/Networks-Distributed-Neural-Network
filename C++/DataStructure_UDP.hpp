@@ -17,6 +17,7 @@
 #include <limits>
 #include <fstream>
 #include <mutex>
+#include <atomic>
 #include <sstream>
 
 #define DATAGRAM_SIZE 500
@@ -309,10 +310,11 @@ public:
 
 class Client_Protocols_UDP {
 public:
-    bool logging_status = false, running = false;
+    std::atomic<bool> running;
+	std::atomic<bool> logging_status;
+	std::atomic<int> actual_datagram_id = 0;
 	std::string final_name,pending_name;
 	ClientInfo pending_transfers;
-	int actual_datagram_id=0;
 public:
     void Error(const std::string& buffer) {
         ProtocolFormat proto;
