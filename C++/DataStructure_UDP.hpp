@@ -188,23 +188,15 @@ public:
 		SentFile &file = pending_transfers[proto.nickname].client_datagrams[proto.datagram_id];
 		bool all_acked = std::all_of(file.acked.begin(), file.acked.end(), [](bool b){ return b; });
 		if(all_acked){
-			std::string new_buff;
-			long long written = 0;
-			for(const auto &frag : file.packets){
-			    long long remaining = file.matrix_size - written;
-			    long long to_write = std::min((long long)frag.size(), remaining);
-			    new_buff += frag.substr(0, to_write);
-			    written += to_write;
-			}
-			pending_transfers.erase(new_buff);
+			pending_transfers.erase(proto.nickname);
 
-			if(client_map.find(new_buff) != client_map.end()){
+			if(client_map.find(proto.nickname) != client_map.end()){
 				std::string error_msg = "ERROR nickname already exists";
 				std::cout << error_msg << std::endl;
 				Send_Error(server_socket,client_addr,error_msg);
 				return "";
 			}
-			client_map[new_buff] = client_addr;
+			client_map[proto.nickname] = client_addr;
 	        print(client_map);
 		}
 		Send_OK(server_socket, client_addr);
@@ -425,7 +417,7 @@ public:
 	    // First fragment
 		int header=HEADER_SIZE+3+final_name.size()+20+msg.size();
 		int remaining_size_first=DATAGRAM_SIZE-header;
-		int current_size =std::min(remaining_size_first,(int)pending_name.size());
+		int current_size =std::min(remaining_size_first,(int)msg.size());
 
 	    int total_remaining = (int)msg.size() - current_size;
 	    int max_content = DATAGRAM_SIZE - header;
@@ -444,7 +436,7 @@ public:
 
 		ClientInfo cf;
 		cf.client_datagrams[actual_datagram_id].total_fragments = total_fragments;
-		cf.client_datagrams[actual_datagram_id].matrix_size = pending_name.size();
+		cf.client_datagrams[actual_datagram_id].matrix_size = msg.size();
 		cf.client_datagrams[actual_datagram_id].packets.resize(total_fragments);
 		cf.client_datagrams[actual_datagram_id].acked.resize(total_fragments,false);
 
@@ -458,7 +450,7 @@ public:
 
 		int start = current_size;
 	    for(int i=1;i<total_fragments;i++){
-	        int frag_size =std::min(max_content,(int)pending_name.size()-start);
+	        int frag_size =std::min(max_content,(int)msg.size()-start);
 	        std::string fragment =msg.substr(start,frag_size);
 
 			ProtocolFormat protocol_normal{'0',actual_datagram_id,total_fragments,seq_numbers++,'B',(int)final_name.size(),final_name,(int)msg.size(),msg};
