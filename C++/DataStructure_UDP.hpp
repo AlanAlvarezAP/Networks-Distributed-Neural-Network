@@ -178,7 +178,7 @@ public:
 
         if(pending_transfers[sender].client_datagrams.find(proto.datagram_id) == pending_transfers[sender].client_datagrams.end()){
             pending_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
-            pending_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
+            pending_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.nickname_size;
             pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
             pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
         }
@@ -210,7 +210,7 @@ public:
             }
 
             client_map[assembled] = client_addr;
-            print_clients(client_map);
+            print(client_map);
 		}
 		Send_OK(server_socket, client_addr);
         return proto.nickname;
