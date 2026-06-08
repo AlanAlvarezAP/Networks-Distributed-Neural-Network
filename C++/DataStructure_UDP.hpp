@@ -84,6 +84,33 @@ struct ProtocolFormat{
 	}
 };
 
+void Send_OK(int socket,sockaddr_in& addr){
+	ProtocolFormat protocol{'0',0,1,0,'K',0,"",0,""};
+    std::string packet = p.ConstructDatagram();
+
+    while(packet.size() < DATAGRAM_SIZE){
+        packet.push_back('#');
+	}
+
+    packet[0] = p.Calculate_Checksum_Fragments(packet);
+
+    sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
+}
+
+void Send_Error(int socket,sockaddr_in& addr,const std::string& msg){
+	ProtocolFormat protocol{'0',0,1,0,'E',0,"",(int)msg.size(),msg};
+
+    std::string packet = p.ConstructDatagram();
+
+    while(packet.size() < DATAGRAM_SIZE){
+        packet.push_back('#');
+	}
+
+    packet[0] = p.Calculate_Checksum_Fragments(packet);
+
+    sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
+}
+
 
 
 void print(const std::unordered_map<std::string,sockaddr_in>& clients){
@@ -136,7 +163,7 @@ public:
 		
 		if (client_map.find(nickname) != client_map.end()) {
 			std::string error_msg = "ERROR nickname already in server";
-			std::cout << error_msg << std::endl;
+			Send_Error(server_socket,client_addr,error_msg);
 			return nickname;
 		}
 		pos += 20;
@@ -168,7 +195,7 @@ public:
 			client_map[nickname] = client_addr;
 	        print(client_map);
 		}
-		
+		Send_OK(server_socket, client_addr);
         return nickname;
     }
 
@@ -197,7 +224,7 @@ public:
 		
 	    if(protocol_type != 'O'){
 	        std::string error_msg = "ERROR INVALID LOGOUT TYPE";
-			std::cout << error_msg << std::endl;
+			Send_Error(server_socket,client_addr,error_msg);
 	        return;
 	    }
 	
@@ -206,12 +233,6 @@ public:
 	
 		nickname=buffer.substr(pos,size_nickname);
 		pos += size_nickname;
-		
-		if (client_map.find(nickname) != client_map.end()) {
-			std::string error_msg = "ERROR nickname already in server";
-			std::cout << error_msg << std::endl;
-			return;
-		}
 		pos += 20;
 	    bool found = false;
 
@@ -229,9 +250,10 @@ public:
 	
 	    if(!found){
 			std::string error_msg = "ERROR USER NOT LOGGED";
-			std::cout << error_msg << std::endl;
+			Send_Error(server_socket,client_addr,error_msg);
 	        return;
 	    }
+		Send_OK(server_socket, client_addr);
 	    print(client_map);
 	}
 
@@ -370,28 +392,47 @@ public:
 	ClientInfo pending_transfers;
 	int actual_datagram_id=0;
 public:
-    /*void Error(const std::string& buffer) {
-        int pos = 8;
-	    int nickname_size =std::atoi(buffer.substr(pos,3).c_str());
-	    pos += 3;
+    void Error(const std::string& buffer) {
+        int pos = 0;
+		char hash=buffer[0];
+	   	pos += 1;
+		int datagram_id = std::atoi(buffer.substr(pos,4).c_str());
+		pos += 4;
+		int total_packets = std::atoi(buffer.substr(pos,4).c_str());
+		pos += 4;
+		int seq_number = std::atoi(buffer.substr(pos,5).c_str());
+		pos += 5;
+
+		char calculated = Calculate_Checksum(buffer.substr(HEADER_SIZE, DATAGRAM_SIZE - HEADER_SIZE));
+	    if(hash != calculated){
+			std::string error_msg = "[WARNING] CHECKSUM";
+			std::cout << error_msg << std::endl;
+	    }
+	   
+	    long long size_matrix;
+	   	char protocol_type;
+	   	std::string matrix_content;
+		protocol_type = buffer[pos++];
+		
+	    if(protocol_type != 'E'){
+	        std::string error_msg = "ERROR INVALID Error TYPE";
+	        return;
+	    }
 	
-	    pos += nickname_size;
+		pos += 3;
+
+		size_matrix= std::atoi(buffer.substr(pos,20).c_str());
+		pos+= 20;
+		matrix_content=std::atoi(buffer.substr(pos,size_matrix).c_str());
+		pos += size_matrix;
 	
-	    int destination_size = std::atoi(buffer.substr(pos,3).c_str());
-	    pos += 3;
-	    pos += destination_size;
-	
-	    int msg_size =std::atoi(buffer.substr(pos,5).c_str());
-	    pos += 5;
-	
-	    std::string error_msg =buffer.substr(pos,msg_size);
 
 		std::cout << "===================================================================" << std::endl;
 	   	std::cout << "Client received error with the content | " << buffer << std::endl;
 	   	std::cout << "===================================================================" << std::endl;
 		
-	    std::cout<< "ERROR -> "<< error_msg<< std::endl;
-    }*/
+	    std::cout<< "ERROR -> "<< matrix_content << std::endl;
+    }
 
     void Login(int client_socket, sockaddr_in& server_addr) {
 		std::string name;
@@ -642,10 +683,6 @@ public:
 			    sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 			    break;
             }
-			/*case 'B': {
-                Broadcast(client_socket, server_addr);
-                break;
-            }
 			case 'K': {
 				std::cout << "All good OK" << std::endl;
 
@@ -661,6 +698,11 @@ public:
             }
             case 'E': {
                 Error(buffer);
+                break;
+            }
+			
+			/*case 'B': {
+                Broadcast(client_socket, server_addr);
                 break;
             }
             case 'b': {
