@@ -134,7 +134,9 @@ void Send_ACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
 	while((int)packet.size() < DATAGRAM_SIZE){ 		
 		packet.push_back('#'); 	
 	} 	
-	packet[0]=protocol.hash=protocol.Calculate_Checksum_Fragments(packet); sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr)); 
+	packet[0]=protocol.hash=protocol.Calculate_Checksum_Fragments(packet); 
+	sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr)); 
+	std::cout << "[SENDING ACK] confirmation for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
 } 
 void Send_NACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
  	ProtocolFormat protocol{'0',proto.datagram_id,1,proto.seq_number,'N',0,"",0,""}; 	
@@ -142,20 +144,25 @@ void Send_NACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
 	while((int)packet.size() < DATAGRAM_SIZE){
 		packet.push_back('#'); 	
 	} 
-	packet[0]=protocol.hash=protocol.Calculate_Checksum_Fragments(packet); sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr)); 
+	packet[0]=protocol.hash=protocol.Calculate_Checksum_Fragments(packet); 
+	sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
+	std::cout << "[SENDING NACK] for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl; 
 } 
-void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex mtx){
+void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 	std::lock_guard<std::mutex> lock(mtx);
  	ProtocolFormat protocol; 
 	bool checksum_error=false;
 	if(!protocol.ParseProtocol(buffer,checksum_error,'A')){ 
+		std::cout << "Datagram failed in parsing" << std::endl;
 		return; 
 	} 
 	auto it = ci.client_datagrams.find(protocol.datagram_id); 
 	if(it == ci.client_datagrams.end()){ 
+		std::cout << "Datagram failed in searching datagram existence" << std::endl;
 		return; 
 	} 
 	if(protocol.seq_number >= 0 && protocol.seq_number < (int)it->second.acked.size()){
+		std::cout << "[ACK] confirmed :D for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
  		it->second.acked[protocol.seq_number] = true;
 		it->second.last_activity =std::chrono::steady_clock::now();
 	}
@@ -163,10 +170,11 @@ void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex mtx){
 	bool all =
     std::all_of(it->second.acked.begin(),it->second.acked.end(),[](bool b){ return b; });
     if(all){
+		std::cout << "[ACK] confirmed all ARRIVED: " << protocol.datagram_id << std::endl;
         ci.client_datagrams.erase(it);
     }
 } 
-void Parse_NACK(const std::string &buffer, ClientInfo& ci,int &socket,sockaddr_in& addr,std::mutex mtx){
+void Parse_NACK(const std::string &buffer, ClientInfo& ci,int &socket,sockaddr_in& addr,std::mutex &mtx){
 	std::lock_guard<std::mutex> lock(mtx);
  	ProtocolFormat protocol; 
 	bool checksum_error=false;
@@ -187,7 +195,7 @@ void Parse_NACK(const std::string &buffer, ClientInfo& ci,int &socket,sockaddr_i
         std::cout << "[ERROR] Max retries reached on packet " << protocol.seq_number << std::endl;
         return;
     }
-    std::cout << "[RETRANSMIT] Datagram " << protocol.datagram_id << " packet " << protocol.seq_number << std::endl;
+    std::cout << "[RETRANSMIT NACK] Datagram " << protocol.datagram_id << " packet " << protocol.seq_number << std::endl;
 	
 	sendto(socket,file.packets[protocol.seq_number].data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr)); 
 }
@@ -219,7 +227,7 @@ void Send_Error(int socket,sockaddr_in& addr,const std::string& msg){
     sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
 }
 
-void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
+void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr,std::mutex &mtx){
 	std::lock_guard<std::mutex> lock(mtx);
     auto now = std::chrono::steady_clock::now();
     for(auto& datagram : ci.client_datagrams){
@@ -486,10 +494,12 @@ public:
 				break;
 			}
 			case 'A':{
+				std::cout << "PARSING ACK" << std::endl;
 				Parse_ACK(buffer,pending_transfers[GetSenderKey(client_addr)],mtx);
 				break;
 			} 			
 			case 'N':{
+				std::cout << "PARSING NACK" << std::endl;
 				Parse_NACK(buffer,pending_transfers[GetSenderKey(client_addr)],server_socket,client_addr,mtx);
 				break;
 			} 
