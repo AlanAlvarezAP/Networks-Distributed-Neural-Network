@@ -305,7 +305,8 @@ public:
 			long long total_fragments =(matrix_data.size() + max_content - 1)/ max_content;
 			int start = 0;
 
-			auto& file =pending_transfers[client.first].client_datagrams[datagram_id];
+			std::string sender = GetSenderKey(const_cast<sockaddr_in&>(client.second));
+			auto& file =pending_transfers[sender].client_datagrams[datagram_id];
 			file.total_fragments = total_fragments;
 			file.matrix_size = matrix_data.size();
 			file.packets.resize(total_fragments);
@@ -494,12 +495,10 @@ public:
 				break;
 			}
 			case 'A':{
-				std::cout << "PARSING ACK" << std::endl;
 				Parse_ACK(buffer,pending_transfers[GetSenderKey(client_addr)],mtx);
 				break;
 			} 			
 			case 'N':{
-				std::cout << "PARSING NACK" << std::endl;
 				Parse_NACK(buffer,pending_transfers[GetSenderKey(client_addr)],server_socket,client_addr,mtx);
 				break;
 			} 
