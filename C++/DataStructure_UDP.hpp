@@ -63,7 +63,7 @@ struct SentFile{
     std::vector<std::string> packets;
     std::vector<bool> acked;
 	std::vector<int> retries;
-    std::chrono::steady_clock::time_point last_activity;
+    std::vector<std::chrono::steady_clock::time_point> last_activity;
 };
 
 struct ClientInfo{
@@ -164,7 +164,6 @@ void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 	if(protocol.seq_number >= 0 && protocol.seq_number < (int)it->second.acked.size()){
 		std::cout << "[ACK] confirmed :D for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
  		it->second.acked[protocol.seq_number] = true;
-		it->second.last_activity =std::chrono::steady_clock::now();
 	}
 	
 	bool all =
@@ -227,12 +226,11 @@ void Send_Error(int socket,sockaddr_in& addr,const std::string& msg){
     sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
 }
 
-void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr,std::mutex &mtx){
-	std::lock_guard<std::mutex> lock(mtx);
+void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
     auto now = std::chrono::steady_clock::now();
     for(auto& datagram : ci.client_datagrams){
         SentFile& file = datagram.second;
-        auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity).count();
+        auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity[i]).count();
         if(elapsed < TIMEOUT_TIME){
             continue;
         }
@@ -244,9 +242,10 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr,std::mutex &mtx){
             if(file.retries[i] > 5){
                 continue;
             }
+			std::cout<< "[TIMEOUT] Datagram "<< datagram.first<< " fragment "<< std::endl;
             sendto(socket,file.packets[i].data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
         }
-        file.last_activity = now;
+        file.last_activity[i] = now;
     }
 }
 
@@ -312,7 +311,7 @@ public:
 			file.packets.resize(total_fragments);
 			file.acked.resize(total_fragments,false);
 			file.retries.resize(total_fragments,0);
-			file.last_activity = std::chrono::steady_clock::now();
+			file.last_activity.resize(total_fragments);
 			for(int i=0;i<total_fragments;i++){
 				long long frag_size =std::min(max_content,(long long)matrix_data.size()-start);
 				std::string fragment =matrix_data.substr(start,frag_size);
@@ -325,6 +324,7 @@ public:
 
 				packet[0] =protocol.Calculate_Checksum_Fragments(packet);
 				file.packets[i] = packet;
+				file.last_activity[i] = std::chrono::steady_clock::now();
 				sendto(server_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&client.second,sizeof(client.second));
 
 				start += frag_size;
@@ -351,12 +351,12 @@ public:
             pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
             pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity = std::chrono::steady_clock::now();
+			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
         }
 
 		pending_transfers[sender].client_datagrams[proto.datagram_id].packets[proto.seq_number]=proto.nickname;
 		pending_transfers[sender].client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
-		pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity=std::chrono::steady_clock::now();
+		pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity[proto.seq_number]=std::chrono::steady_clock::now();
 		
 		
 		
@@ -446,13 +446,13 @@ public:
 			pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity = std::chrono::steady_clock::now();
+			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
 		}
 
 		auto& file =pending_transfers[sender].client_datagrams[proto.datagram_id];
 		file.packets[proto.seq_number] =proto.matrixcontent;
 		file.acked[proto.seq_number] = true;
-		file.last_activity = std::chrono::steady_clock::now();
+		file.last_activity[proto.seq_number] = std::chrono::steady_clock::now();
 		Send_ACK(proto,server_socket,client_addr);
 		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
 
@@ -477,6 +477,23 @@ public:
 		std::cout << "====================================" << std::endl;
 
 		pending_transfers[sender].client_datagrams.erase(proto.datagram_id);
+	}
+
+	void TimeoutThread_Server(Server_Protocols_UDP* sv, int socket) {
+	    while (true) {
+	        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	        std::lock_guard<std::mutex> lock(sv->mtx);
+	        for (auto& pair : sv->pending_transfers) {
+	            std::string sender_key = pair.first;
+	            ClientInfo& ci = pair.second;
+	            auto it = sv->client_map.find(sender_key);
+	            if (it == sv->client_map.end()){
+					continue;
+				}
+	            sockaddr_in addr = it->second;
+	            CheckTimeouts(ci, socket, addr);
+	        }
+	    }
 	}
 
 
@@ -568,7 +585,7 @@ public:
 		file.packets.resize(total_fragments);
 		file.acked.resize(total_fragments,false);
 		file.retries.resize(total_fragments,0);
-		file.last_activity = std::chrono::steady_clock::now();
+		file.last_activity.resize(total_fragments);
 
 		std::cout << "=======================================================" << std::endl;
 		std::cout << "Client Sending from -> " << protocol.nickname << " to server with the datagram format of" << std::endl;
@@ -576,6 +593,7 @@ public:
 		std::cout << "=======================================================" << std::endl;
 		
 		file.packets[0] = packet;
+		file.last_activity[0] = std::chrono::steady_clock::now();
 		sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
 		int start = current_size;
@@ -596,6 +614,7 @@ public:
 			std::cout << "Client Sending ----> Fragment #" << i+1 << " | " << packet_2 << std::endl;
 			std::cout << "=======================================================" << std::endl;
 			file.packets[i] = packet_2;
+			file.last_activity[i] = std::chrono::steady_clock::now();
 	        sendto(client_socket,packet_2.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
 			start += frag_size;
@@ -618,7 +637,7 @@ public:
 		file.packets.resize(total_fragments);
 		file.acked.resize(total_fragments,false);
 		file.retries.resize(total_fragments,0);
-		file.last_activity = std::chrono::steady_clock::now();
+		file.last_activity.resize(total_fragments);
 		
 		for(int i=0;i<total_fragments;i++){
 			long long frag_size =std::min(max_content,(long long)result.size()-start);
@@ -635,6 +654,7 @@ public:
 
 			packet[0] =protocol.Calculate_Checksum_Fragments(packet);
 			file.packets[i] = packet;
+			file.last_activity[i] = std::chrono::steady_clock::now();
 			sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
 			start += frag_size;
@@ -657,7 +677,7 @@ public:
 			pending_transfers.client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
 			pending_transfers.client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
 			pending_transfers.client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
-			pending_transfers.client_datagrams[proto.datagram_id].last_activity = std::chrono::steady_clock::now();
+			pending_transfers.client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
 		}
 
 		std::cout << "=======================================================" << std::endl;
@@ -667,7 +687,7 @@ public:
 		auto& file =pending_transfers.client_datagrams[proto.datagram_id];
 		file.packets[proto.seq_number] =proto.matrixcontent;
 		file.acked[proto.seq_number] = true;
-		file.last_activity = std::chrono::steady_clock::now();
+		file.last_activity[proto.seq_number] = std::chrono::steady_clock::now();
 		Send_ACK(proto,client_socket,server_addr);
 		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
 
@@ -699,6 +719,14 @@ public:
 		std::string result = matrix_text;
 
 		Broadcast_Response(result,client_socket,server_addr);
+	}
+
+	void TimeoutThread_Client(Client_Protocols_UDP* cl, int socket, sockaddr_in server_addr) {
+	    while (cl->running) {
+	        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	        std::lock_guard<std::mutex> lock(cl->mtx);
+	        CheckTimeouts(cl->pending_transfers, socket, server_addr);
+	    }
 	}
 
     void Cases_Client_UDP(char type,const std::string& buffer, int client_socket, sockaddr_in& server_addr) {
