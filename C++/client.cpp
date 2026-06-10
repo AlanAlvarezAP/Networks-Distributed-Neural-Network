@@ -63,7 +63,7 @@ int main(void){
 
 	clp_UDP.running = true;
 	std::thread(read_thread_UDP,SocketFD).detach();
-    
+    std::thread(TimeoutThread_Client, &clp_UDP, SocketFD, stSockAddr).detach();
     print_menu();
 
     while(clp_UDP.running) {
