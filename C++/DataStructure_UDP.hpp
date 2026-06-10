@@ -267,7 +267,7 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
                 continue;
             }
 			std::cout<< "[TIMEOUT] Datagram "<< datagram.first<< " fragment "<< std::endl;
-			std::cout << "RESENDING " << file.packets[i].data() << std::endl;
+			std::cout << "RESENDING " << file.packets[i] << " with size: " << file.packets[i].size() << std::endl;
             sendto(socket,file.packets[i].data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
 			file.last_activity[i] = now;
         }
@@ -702,6 +702,13 @@ public:
 	}
 
 	void Matrix_react(const std::string& buffer,int client_socket,sockaddr_in& server_addr){
+		static bool first_time=true;
+		if(first_time){
+			std::cout << "SLEEPING ZZZZ" << std::endl;
+			std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+			first_time=false;
+		}
+		std::lock_guard<std::mutex>lock(mtx);
 		ProtocolFormat proto;
 		bool checksum_error=false;
 		if(!proto.ParseProtocol(buffer,checksum_error,'M')){
@@ -730,12 +737,7 @@ public:
 		file.payloads[proto.seq_number] =proto.matrixcontent;
 		file.acked[proto.seq_number] = true;
 		file.last_activity[proto.seq_number] = std::chrono::steady_clock::now();
-		static bool first_time=true;
-		if(first_time){
-			std::cout << "SLEEPING ZZZZ";
-			std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-			first_time=false;
-		}
+		
 		Send_ACK(proto,client_socket,server_addr);
 		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
 
