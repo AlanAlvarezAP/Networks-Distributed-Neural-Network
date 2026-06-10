@@ -230,22 +230,25 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
     auto now = std::chrono::steady_clock::now();
     for(auto& datagram : ci.client_datagrams){
         SentFile& file = datagram.second;
-        auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity[i]).count();
-        if(elapsed < TIMEOUT_TIME){
-            continue;
-        }
         for(int i=0;i<(int)file.acked.size();i++){
             if(file.acked[i]){
                 continue;
             }
+			auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity[i]).count();
+			std::cout << "Elapsed time -> " << elapsed << std::endl;
+			if(elapsed < TIMEOUT_TIME){
+				continue;
+			}
             file.retries[i]++;
             if(file.retries[i] > 5){
                 continue;
             }
 			std::cout<< "[TIMEOUT] Datagram "<< datagram.first<< " fragment "<< std::endl;
+			std::cout << "RESENDING " << file.packets[i].data() << std::endl;
             sendto(socket,file.packets[i].data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
+			file.last_activity[i] = now;
         }
-        file.last_activity[i] = now;
+        
     }
 }
 
@@ -520,6 +523,7 @@ public:
 				break;
 			} 
             default: {
+				std::cout << " Got sent -> " << buffer << std::endl;
                 std::cout << "This protocol is not registered in Server :( " << std::endl;
                 break;
             }
@@ -688,6 +692,12 @@ public:
 		file.packets[proto.seq_number] =proto.matrixcontent;
 		file.acked[proto.seq_number] = true;
 		file.last_activity[proto.seq_number] = std::chrono::steady_clock::now();
+		static bool first_time=true;
+		if(first_time){
+			std::cout << "SLEEPING ZZZZ";
+			std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+			first_time=false;
+		}
 		Send_ACK(proto,client_socket,server_addr);
 		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
 

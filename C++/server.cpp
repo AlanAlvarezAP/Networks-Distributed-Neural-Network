@@ -53,7 +53,7 @@ int main(void){
     bind(ServerFD,(const struct sockaddr *)&stSockAddr, sizeof(struct sockaddr_in));
 
     std::thread(read_thread_UDP,ServerFD).detach();
-    std::thread(TimeoutThread_Server, &sv_UDP, ServerFD).detach();
+    std::thread(&Server_Protocols_UDP::TimeoutThread_Server, &sv_UDP, &sv_UDP, ServerFD).detach();
     while(true){
         int op;
         print_server_menu();
