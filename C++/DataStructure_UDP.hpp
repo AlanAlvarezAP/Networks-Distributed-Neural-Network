@@ -61,12 +61,14 @@ struct SentFile{
     int total_fragments;
 	long long matrix_size;
     std::vector<std::string> packets;
+	std::vector<std::string> payloads;
     std::vector<bool> acked;
 	std::vector<int> retries;
     std::vector<std::chrono::steady_clock::time_point> last_activity;
 };
 
 struct ClientInfo{
+	sockaddr_in addr;
 	std::map<int,SentFile> client_datagrams;
 };
 
@@ -308,10 +310,12 @@ public:
 			int start = 0;
 
 			std::string sender = GetSenderKey(const_cast<sockaddr_in&>(client.second));
+			pending_transfers[sender].addr = client.second;
 			auto& file =pending_transfers[sender].client_datagrams[datagram_id];
 			file.total_fragments = total_fragments;
 			file.matrix_size = matrix_data.size();
 			file.packets.resize(total_fragments);
+			file.payloads.resize(total_fragments);
 			file.acked.resize(total_fragments,false);
 			file.retries.resize(total_fragments,0);
 			file.last_activity.resize(total_fragments);
@@ -326,7 +330,8 @@ public:
 				}
 
 				packet[0] =protocol.Calculate_Checksum_Fragments(packet);
-				file.packets[i] = packet;
+				file.packets[i]  = packet;
+				file.payloads[i] = fragment;
 				file.last_activity[i] = std::chrono::steady_clock::now();
 				sendto(server_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&client.second,sizeof(client.second));
 
@@ -347,17 +352,19 @@ public:
 
 		std::lock_guard<std::mutex> lock(mtx);
 		std::string sender = GetSenderKey(client_addr);
-
+		pending_transfers[sender].addr = client_addr;
         if(pending_transfers[sender].client_datagrams.find(proto.datagram_id) == pending_transfers[sender].client_datagrams.end()){
             pending_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
             pending_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.nickname_size;
             pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
+			pending_transfers[sender].client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
             pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
         }
 
-		pending_transfers[sender].client_datagrams[proto.datagram_id].packets[proto.seq_number]=proto.nickname;
+		pending_transfers[sender].client_datagrams[proto.datagram_id].packets[proto.seq_number]=buffer;
+		pending_transfers[sender].client_datagrams[proto.datagram_id].payloads[proto.seq_number]=proto.nickname;
 		pending_transfers[sender].client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
 		pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity[proto.seq_number]=std::chrono::steady_clock::now();
 		
@@ -373,7 +380,7 @@ public:
 		if(all_acked){
 			std::string assembled;
             long long written = 0;
-            for(const auto &frag : file.packets){
+            for(const auto &frag : file.payloads){
                 long long remaining = file.matrix_size - written;
                 long long to_write = std::min((long long)frag.size(), remaining);
                 assembled += frag.substr(0, to_write);
@@ -406,6 +413,7 @@ public:
 		}
 		std::lock_guard<std::mutex> lock(mtx);
 		std::string sender = GetSenderKey(client_addr);
+		pending_transfers[sender].addr = client_addr;
 	    bool found = false;
 
 		std::cout << "===================================================================" << std::endl;
@@ -442,18 +450,20 @@ public:
 
 		std::lock_guard<std::mutex> lock(mtx);
 		std::string sender =GetSenderKey(client_addr);
-
+		pending_transfers[sender].addr = client_addr;
 		if(pending_transfers[sender].client_datagrams.find(proto.datagram_id)==pending_transfers[sender].client_datagrams.end()){
 			pending_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
 			pending_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
 			pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
+			pending_transfers[sender].client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
 		}
 
 		auto& file =pending_transfers[sender].client_datagrams[proto.datagram_id];
-		file.packets[proto.seq_number] =proto.matrixcontent;
+		file.packets[proto.seq_number] =buffer;
+		file.payloads[proto.seq_number] =proto.matrixcontent;
 		file.acked[proto.seq_number] = true;
 		file.last_activity[proto.seq_number] = std::chrono::steady_clock::now();
 		Send_ACK(proto,server_socket,client_addr);
@@ -466,7 +476,7 @@ public:
 		std::string result;
 		long long written = 0;
 
-		for(const auto& frag : file.packets){
+		for(const auto& frag : file.payloads){
 			long long remaining =file.matrix_size - written;
 			long long take =std::min((long long)frag.size(),remaining);
 
@@ -486,16 +496,11 @@ public:
 	    while (true) {
 	        std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	        std::lock_guard<std::mutex> lock(sv->mtx);
-	        for (auto& pair : sv->pending_transfers) {
-	            std::string sender_key = pair.first;
-	            ClientInfo& ci = pair.second;
-	            auto it = sv->client_map.find(sender_key);
-	            if (it == sv->client_map.end()){
-					continue;
-				}
-	            sockaddr_in addr = it->second;
-	            CheckTimeouts(ci, socket, addr);
-	        }
+	        for(auto& pair : sv->pending_transfers){
+			    ClientInfo& ci = pair.second;
+			
+			    CheckTimeouts(ci, socket, ci.addr);
+			}
 	    }
 	}
 
@@ -587,6 +592,7 @@ public:
 		file.total_fragments = total_fragments;
 		file.matrix_size = pending_name.size();
 		file.packets.resize(total_fragments);
+		file.payloads.resize(total_fragments);
 		file.acked.resize(total_fragments,false);
 		file.retries.resize(total_fragments,0);
 		file.last_activity.resize(total_fragments);
@@ -618,6 +624,7 @@ public:
 			std::cout << "Client Sending ----> Fragment #" << i+1 << " | " << packet_2 << std::endl;
 			std::cout << "=======================================================" << std::endl;
 			file.packets[i] = packet_2;
+			file.payloads[i] = fragment;
 			file.last_activity[i] = std::chrono::steady_clock::now();
 	        sendto(client_socket,packet_2.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
@@ -639,6 +646,7 @@ public:
 		file.total_fragments = total_fragments;
 		file.matrix_size = result.size();
 		file.packets.resize(total_fragments);
+		file.payloads.resize(total_fragments);
 		file.acked.resize(total_fragments,false);
 		file.retries.resize(total_fragments,0);
 		file.last_activity.resize(total_fragments);
@@ -658,6 +666,7 @@ public:
 
 			packet[0] =protocol.Calculate_Checksum_Fragments(packet);
 			file.packets[i] = packet;
+			file.payloads[i] = fragment;
 			file.last_activity[i] = std::chrono::steady_clock::now();
 			sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
@@ -679,6 +688,7 @@ public:
 			pending_transfers.client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
 			pending_transfers.client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
 			pending_transfers.client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
+			pending_transfers.client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
 			pending_transfers.client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
 			pending_transfers.client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
 			pending_transfers.client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
@@ -689,7 +699,8 @@ public:
 		std::cout << "=======================================================" << std::endl;
 
 		auto& file =pending_transfers.client_datagrams[proto.datagram_id];
-		file.packets[proto.seq_number] =proto.matrixcontent;
+		file.packets[proto.seq_number] =buffer;
+		file.payloads[proto.seq_number] =proto.matrixcontent;
 		file.acked[proto.seq_number] = true;
 		file.last_activity[proto.seq_number] = std::chrono::steady_clock::now();
 		static bool first_time=true;
@@ -708,7 +719,7 @@ public:
 
 		long long written = 0;
 
-		for(const auto& frag : file.packets){
+		for(const auto& frag : file.payloads){
 			long long remaining =file.matrix_size - written;
 			long long take =std::min((long long)frag.size(),remaining);
 			matrix_text += frag.substr(0,take);
