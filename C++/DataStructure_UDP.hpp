@@ -63,13 +63,21 @@ struct SentFile{
     std::vector<std::string> packets;
 	std::vector<std::string> payloads;
     std::vector<bool> acked;
+	std::vector<bool> retransmitted;
 	std::vector<int> retries;
     std::vector<std::chrono::steady_clock::time_point> last_activity;
+
 };
 
 struct ClientInfo{
 	sockaddr_in addr;
 	std::map<int,SentFile> client_datagrams;
+	double EstRTT = 1000.0;
+	double Dev = 0.0;
+	double Timeout = 1000.0;
+	double delta=1.0/8.0;
+	double mu = 1.0;
+	double fi = 4.0;
 };
 
 struct ProtocolFormat{
@@ -152,6 +160,7 @@ void Send_NACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
 } 
 void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 	std::lock_guard<std::mutex> lock(mtx);
+	
  	ProtocolFormat protocol; 
 	bool checksum_error=false;
 	if(!protocol.ParseProtocol(buffer,checksum_error,'A')){ 
@@ -163,6 +172,16 @@ void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 		std::cout << "Datagram failed in searching datagram existence" << std::endl;
 		return; 
 	} 
+	auto now = std::chrono::steady_clock::now();
+	if(!it->second.retransmitted[protocol.seq_number]){
+		double SampleRTT =std::chrono::duration_cast<std::chrono::milliseconds>(now-it->second.last_activity[protocol.seq_number]).count();
+		double Diff = SampleRTT - ci.EstRTT;
+		ci.EstRTT= ci.EstRTT + ci.delta*Diff;
+		ci.Dev=ci.Dev+ci.delta*(std::abs(Diff)-ci.Dev);
+		ci.Timeout = ci.mu*ci.EstRTT+ci.fi*ci.Dev;
+		std::cout << "[DYNAMIC TIMEOUT] Updated to " << ci.Timeout << std::endl;
+	}
+	it->second.retransmitted[protocol.seq_number] = false;
 	if(protocol.seq_number >= 0 && protocol.seq_number < (int)it->second.acked.size()){
 		std::cout << "[ACK] confirmed :D for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
  		it->second.acked[protocol.seq_number] = true;
@@ -191,13 +210,14 @@ void Parse_NACK(const std::string &buffer, ClientInfo& ci,int &socket,sockaddr_i
 	   	return; 
 	} 
 	file.retries[protocol.seq_number]++;
-
+	
     if(file.retries[protocol.seq_number] > 5){
         std::cout << "[ERROR] Max retries reached on packet " << protocol.seq_number << std::endl;
         return;
     }
     std::cout << "[RETRANSMIT NACK] Datagram " << protocol.datagram_id << " packet " << protocol.seq_number << std::endl;
-	
+	file.retransmitted[protocol.seq_number] = true;
+	file.last_activity[protocol.seq_number] =std::chrono::steady_clock::now();
 	sendto(socket,file.packets[protocol.seq_number].data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr)); 
 }
 
@@ -238,10 +258,11 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
             }
 			auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity[i]).count();
 			std::cout << "Elapsed time -> " << elapsed << std::endl;
-			if(elapsed < TIMEOUT_TIME){
+			if(elapsed < ci.Timeout){
 				continue;
 			}
             file.retries[i]++;
+			file.retransmitted[i] = true;
             if(file.retries[i] > 5){
                 continue;
             }
@@ -317,6 +338,7 @@ public:
 			file.packets.resize(total_fragments);
 			file.payloads.resize(total_fragments);
 			file.acked.resize(total_fragments,false);
+			file.retransmitted.resize(total_fragments,false);
 			file.retries.resize(total_fragments,0);
 			file.last_activity.resize(total_fragments);
 			for(int i=0;i<total_fragments;i++){
@@ -359,6 +381,7 @@ public:
             pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
             pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
+			pending_transfers[sender].client_datagrams[proto.datagram_id].retransmitted.resize(proto.total_packets,false);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
         }
@@ -457,6 +480,7 @@ public:
 			pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
+			pending_transfers[sender].client_datagrams[proto.datagram_id].retransmitted.resize(proto.total_packets,false);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
 			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
 		}
@@ -594,6 +618,7 @@ public:
 		file.packets.resize(total_fragments);
 		file.payloads.resize(total_fragments);
 		file.acked.resize(total_fragments,false);
+		file.retransmitted.resize(total_fragments,false);
 		file.retries.resize(total_fragments,0);
 		file.last_activity.resize(total_fragments);
 
@@ -648,6 +673,7 @@ public:
 		file.packets.resize(total_fragments);
 		file.payloads.resize(total_fragments);
 		file.acked.resize(total_fragments,false);
+		file.retransmitted.resize(total_fragments,false);
 		file.retries.resize(total_fragments,0);
 		file.last_activity.resize(total_fragments);
 		
@@ -690,6 +716,7 @@ public:
 			pending_transfers.client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
 			pending_transfers.client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
 			pending_transfers.client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
+			pending_transfers.client_datagrams[proto.datagram_id].retransmitted.resize(proto.total_packets,false);
 			pending_transfers.client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
 			pending_transfers.client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
 		}
