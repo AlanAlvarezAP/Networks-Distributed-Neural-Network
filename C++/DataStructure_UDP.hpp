@@ -25,7 +25,7 @@
 #define TIMEOUT_TIME 1000
 
 
-
+/* Function 01: to map a number to his corresponding bytes, for example 2 bytes for 5 is 05*/
 std::string number_to_string_2(int number, int size) {
     std::string result(size, ' ');
     int count = size - 1;
@@ -43,6 +43,7 @@ std::string number_to_string_2(int number, int size) {
     return result;
 }
 
+/* Function 02: checksum with 1 byte with offset in range [0-8]?*/
 char Calculate_Checksum(std::string content){
     int sum = 0;
     for(unsigned char c : content){
@@ -52,11 +53,13 @@ char Calculate_Checksum(std::string content){
     return static_cast<char>(sum % 9) + '0';
 }
 
+/* Function 03: Get the format with IP:Port for the string name of the client (I USED THE ONE FROM THE TEACHER :D)*/
 std::string GetSenderKey(sockaddr_in& addr){
     return std::string(inet_ntoa(addr.sin_addr)) + ":" + std::to_string(ntohs(addr.sin_port));
 }
 
 
+/* Struct 01: struct basic in datagram level with all logic for the fragments and times*/
 struct SentFile{
     int total_fragments;
 	long long matrix_size;
@@ -69,6 +72,7 @@ struct SentFile{
 
 };
 
+/* Struct 02: struct basic in client level with all logic for the datagrams and times*/
 struct ClientInfo{
 	sockaddr_in addr;
 	std::map<int,SentFile> client_datagrams;
@@ -80,6 +84,7 @@ struct ClientInfo{
 	double fi = 4.0;
 };
 
+/* Struct 03: struct for the protocol with construction and parsing of the datagrams*/
 struct ProtocolFormat{
 	char hash; // 1 byte
 	int datagram_id; // 4 byte
@@ -138,6 +143,8 @@ struct ProtocolFormat{
 		return true;
 	}
 };
+
+/* Function 04: funciton to send ack to their destination*/
 void Send_ACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
  	ProtocolFormat protocol{'0',proto.datagram_id,1,proto.seq_number,'A',0,"",0,""}; 	
 	std::string packet = protocol.ConstructDatagram(); 	
@@ -148,6 +155,8 @@ void Send_ACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
 	sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr)); 
 	std::cout << "[SENDING ACK] confirmation for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
 } 
+
+/* Function 05: function to send nack to their destination*/
 void Send_NACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
  	ProtocolFormat protocol{'0',proto.datagram_id,1,proto.seq_number,'N',0,"",0,""}; 	
 	std::string packet = protocol.ConstructDatagram(); 	
@@ -158,6 +167,8 @@ void Send_NACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
 	sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
 	std::cout << "[SENDING NACK] for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl; 
 } 
+
+/* Function 06: function to parse the ack to their destination and also update dynamically update the Timeout*/
 void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 	std::lock_guard<std::mutex> lock(mtx);
 	
@@ -194,6 +205,8 @@ void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
         ci.client_datagrams.erase(it);
     }
 } 
+
+/* Function 07: function to parse the nack to their destination and also retransmit the datagram*/
 void Parse_NACK(const std::string &buffer, ClientInfo& ci,int &socket,sockaddr_in& addr,std::mutex &mtx){
 	std::lock_guard<std::mutex> lock(mtx);
  	ProtocolFormat protocol; 
@@ -221,6 +234,7 @@ void Parse_NACK(const std::string &buffer, ClientInfo& ci,int &socket,sockaddr_i
 	sendto(socket,file.packets[protocol.seq_number].data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr)); 
 }
 
+/* Function 08: function to send ok xd*/
 void Send_OK(int socket,sockaddr_in& addr){
 	ProtocolFormat protocol{'0',0,1,0,'K',0,"",0,""};
     std::string packet = protocol.ConstructDatagram();
@@ -234,6 +248,7 @@ void Send_OK(int socket,sockaddr_in& addr){
     sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
 }
 
+/* Function 09: function to send error xd*/
 void Send_Error(int socket,sockaddr_in& addr,const std::string& msg){
 	ProtocolFormat protocol{'0',0,1,0,'E',0,"",(int)msg.size(),msg};
 
@@ -248,6 +263,7 @@ void Send_Error(int socket,sockaddr_in& addr,const std::string& msg){
     sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
 }
 
+/* Function 10: function to check all timeout logic PER CLIENT and also check if the datagram was retransmitted more than 5 times descarded*/
 void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
     auto now = std::chrono::steady_clock::now();
     for(auto& datagram : ci.client_datagrams){
@@ -275,7 +291,7 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
     }
 }
 
-
+/* Function 11: print :D*/
 void print(const std::unordered_map<std::string,sockaddr_in>& clients){
 	std::cout << "================================" << std::endl;
 	for(const auto& client : clients){
@@ -284,18 +300,16 @@ void print(const std::unordered_map<std::string,sockaddr_in>& clients){
 	std::cout << "================================" << std::endl;
 }
 
-/*void Reconstruct_Matrix(const std::string& buffer,std::vector<std::vector<double>>& matrix){
-	
-}*/
-
+/* Class 01: class for all the server protocols that is read the csv, login,logout, receive response of matrix from clients*/
 class Server_Protocols_UDP {
 public:
-	std::unordered_map<std::string,sockaddr_in> client_map;
-	std::unordered_map<std::string, ClientInfo> pending_transfers;
-	std::atomic<int> actual_datagram_id=0;
+	std::unordered_map<std::string,sockaddr_in> client_map; // mapping the IP:Port to the user sockaddr_in
+	std::unordered_map<std::string, ClientInfo> pending_transfers; // All the transfers done by the multiple clients
+	std::atomic<int> actual_datagram_id=0; // global counter for datagrams
 	std::mutex mtx;
 public:
 
+	// Read the csv
 	void Raw_Matrix_file(int server_socket){
 		std::string path;
 
@@ -362,6 +376,7 @@ public:
 		}
 	}
 
+	// For the login of the user
     std::string Login(const std::string& buffer, int server_socket, sockaddr_in& client_addr) {
 		ProtocolFormat proto;
 		bool checksum_error=false;
@@ -425,6 +440,7 @@ public:
         return proto.nickname;
     }
 
+	// For the logout
 	void Logout(const std::string& buffer,int server_socket,sockaddr_in& client_addr){
 	    ProtocolFormat proto;
 		bool checksum_error=false;
@@ -461,6 +477,7 @@ public:
 	    print(client_map);
 	}
 
+	// To process all the fragments received from the multples slaves
 	void Processed_Matrix(const std::string& buffer,int server_socket,sockaddr_in& client_addr){
 		ProtocolFormat proto;
 		bool checksum_error=false;
@@ -516,8 +533,10 @@ public:
 		pending_transfers[sender].client_datagrams.erase(proto.datagram_id);
 	}
 
+	// Dedicated timeout checking for the thread server
 	void TimeoutThread_Server(Server_Protocols_UDP* sv, int socket) {
 	    while (true) {
+			// Some sleep to prevent instatineous in the first fragment
 	        std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	        std::lock_guard<std::mutex> lock(sv->mtx);
 	        for(auto& pair : sv->pending_transfers){
@@ -529,6 +548,7 @@ public:
 	}
 
 
+	// All the possible cases to facilitate the parsing
     void Cases_Server(char type,const std::string& buffer, int server_socket, sockaddr_in& client_addr) {
         switch (type) {
             case 'L': {
@@ -560,15 +580,17 @@ public:
     }
 };
 
+/* Class 02: Class for all the client protocols like error parsing, login, logout and reciving the datagrams and functions to resend to master*/
 class Client_Protocols_UDP {
 public:
-    std::atomic<bool> running;
-	std::atomic<bool> logging_status;
-	std::atomic<int> actual_datagram_id = 0;
-	std::string final_name,pending_name;
-	std::mutex mtx;
-	ClientInfo pending_transfers;
+    std::atomic<bool> running; // For running the program
+	std::atomic<bool> logging_status; // For logging
+	std::atomic<int> actual_datagram_id = 0; // Global to know the datagram id
+	std::string final_name,pending_name; // Logging name logic
+	std::mutex mtx; // Mutex
+	ClientInfo pending_transfers; // Transfers for a specific client
 public:
+	// Error logic
     void Error(const std::string& buffer) {
         ProtocolFormat proto;
 		bool checksum_error=false;
@@ -584,6 +606,7 @@ public:
 	    std::cout<< "ERROR -> "<< proto.matrixcontent << std::endl;
     }
 
+	// Logging logic
     void Login(int client_socket, sockaddr_in& server_addr) {
 		std::string name;
         std::cout << "Give me your nickname to send -> ";
@@ -658,7 +681,7 @@ public:
         actual_datagram_id++;
     }
 
-
+	// To response doing something and resending to the master
 	void Broadcast_Response(const std::string& result,int client_socket,sockaddr_in& server_addr){
 		int seq = 0;
 
@@ -701,6 +724,7 @@ public:
 		actual_datagram_id++;
 	}
 
+	// Receiving the matrix from the master
 	void Matrix_react(const std::string& buffer,int client_socket,sockaddr_in& server_addr){
 		static bool first_time=true;
 		if(first_time){
@@ -771,6 +795,7 @@ public:
 		Broadcast_Response(result,client_socket,server_addr);
 	}
 
+	// Timeout exclusively for the client thread
 	void TimeoutThread_Client(Client_Protocols_UDP* cl, int socket, sockaddr_in server_addr) {
 	    while (cl->running) {
 	        std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -779,6 +804,7 @@ public:
 	    }
 	}
 
+	// All the possible cases to facilitate the parsing
     void Cases_Client_UDP(char type,const std::string& buffer, int client_socket, sockaddr_in& server_addr) {
         switch (type) {
             case 'L': {
