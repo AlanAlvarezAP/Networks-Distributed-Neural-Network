@@ -101,7 +101,7 @@ def load_matrices_from_csv(prefix="matriz"):
     return weights_dict
 
 # COMUNICACIÓN CON ESCLAVOS PYTHON
-# NO son relevantes para la implementación C++.
+# No son relevantes para la implementación C++.
 
 # Lee exactamente 'size' bytes del socket, acumulando chunks hasta completar.
 def recv_exact(conn, size):
