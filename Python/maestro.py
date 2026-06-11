@@ -8,7 +8,7 @@ import socket
 import pickle
 import os
 
-# CONFIGURACIÓN
+# Configuración
 CSV_PATH      = "Dataset of Diabetes .csv"
 INPUT_DIM     = 200          # cantidad de features de entrada
 NUM_CLASSES   = 3            # clases de salida (columnas del one-hot)
@@ -22,7 +22,7 @@ SLAVE_HOSTS = [
 ]
 N_SLAVES = len(SLAVE_HOSTS)
 
-# PUNTO DE CONEXIÓN CON C++
+# Punto de conexión en C++
 # El maestro Python se conecta a este host/puerto al final de cada época.
 # El programa C++ debe estar escuchando aquí antes de que empiece el entrenamiento.
 CPP_MASTER_HOST = '127.0.0.1'
@@ -36,7 +36,7 @@ os.makedirs(CSV_DIR, exist_ok=True)
 # Nombres de las 4 capas cuyas matrices de pesos se intercambian con C++.
 LAYER_NAMES = ['fc1', 'fc2', 'fc3', 'class_logits']
 
-# RED NEURONAL
+# Red Neuronal
 class MulticlassClassifier(nn.Module):
     # Define la arquitectura: fc1(200→128), fc2(128→64), fc3(64→32), class_logits(32→3).
     def __init__(self, input_dim: int, num_classes: int,
@@ -57,7 +57,7 @@ class MulticlassClassifier(nn.Module):
         log_vars = self.class_log_vars(x)
         return logits, log_vars
 
-# FUNCIONES DE MATRICES
+# Funciones de Matrices
 # Extrae las matrices de pesos de las 4 capas del modelo como diccionario {nombre: numpy array}.
 def get_weight_matrices(model):
     return {name: getattr(model, name).weight.data.cpu().numpy().copy()
@@ -78,7 +78,7 @@ def average_weight_matrices(list_of_dicts):
         averaged[name] = stacked.mean(axis=0)
     return averaged
 
-# GUARDAR Y CARGAR MATRICES COMO CSV
+# Guardar y Cargar matrices como CSV
 # Guarda las 4 matrices en archivos CSV dentro de matrices_csv/ con el prefijo dado.
 # C++ debe LEER los archivos que genera esta función (prefijo "para_cpp").
 # Formato: sin encabezado, valores float32 separados por comas.
@@ -100,7 +100,7 @@ def load_matrices_from_csv(prefix="matriz"):
         print(f"  [CSV] Cargado:  {path}  shape={weights_dict[name].shape}")
     return weights_dict
 
-# COMUNICACIÓN CON ESCLAVOS PYTHON
+# Comunicación con Esclavos PYTHON
 # No son relevantes para la implementación C++.
 
 # Lee exactamente 'size' bytes del socket, acumulando chunks hasta completar.
@@ -132,7 +132,7 @@ def send_to_slave(host, port, package):
         updated = recv_pickle(s)
     return updated
 
-# COMUNICACIÓN CON MAESTRO C++
+# Comunicación con MAESTRO C++
 # Función principal de integración con C++. Se llama una vez por época.
 # Flujo completo:
 #   1. Llama a save_matrices_to_csv() → escribe 4 archivos "matrices_csv/para_cpp_*.csv"
@@ -175,7 +175,7 @@ print(f"[MAESTRO] Dataset: X{X.shape}  y{y.shape}")
 X_parts = np.array_split(X_np, N_SLAVES)
 y_parts = np.array_split(y_onehot_np, N_SLAVES)
 
-# MODELO Y OPTIMIZADO
+# Modelo Y Optimizado
 model     = MulticlassClassifier(input_dim=INPUT_DIM, num_classes=NUM_CLASSES)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -184,7 +184,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 dataset      = TensorDataset(X, y)
 train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-# LOOP PRINCIPAL
+# Loop Principal
 # En cada época el flujo es:
 #   1. El maestro entrena localmente (backprop completo sobre todos los datos)
 #   2. Extrae las 4 matrices de pesos resultantes
@@ -250,7 +250,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
         print(f"  [AVISO] Maestro C++ no disponible: {e}")
         print(f"          Se conservan las matrices promediadas")
 
-# RESULTADOS FINALES
+# Resultados Finales
 print(f"\n{'═'*55}")
 print("[MAESTRO] Entrenamiento finalizado.")
 for name in LAYER_NAMES:
