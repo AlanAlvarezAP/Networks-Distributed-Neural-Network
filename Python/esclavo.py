@@ -6,7 +6,7 @@ import numpy as np
 import socket
 import pickle
 
-# CONFIGURACIÓN
+# Configuración
 SLAVE_HOST    = '0.0.0.0'
 SLAVE_PORT    = 6001        # cambia a 6002 para la segunda instancia
 
@@ -18,7 +18,7 @@ LEARNING_RATE = 0.001
 # Nombres de las 4 capas cuyos pesos se sincronizan con el maestro Python en cada época.
 LAYER_NAMES = ['fc1', 'fc2', 'fc3', 'class_logits']
 
-# RED NEURONAL
+# Red Neuronal
 # Define la misma arquitectura que el maestro: fc1(200→128), fc2(128→64), fc3(64→32), class_logits(32→3).
 # Debe ser IDÉNTICA a la del maestro para que los pesos sean compatibles.
 class MulticlassClassifier(nn.Module):
@@ -40,7 +40,7 @@ class MulticlassClassifier(nn.Module):
         log_vars = self.class_log_vars(x)
         return logits, log_vars
 
-# FUNCIONES DE MATRICES
+# Funciones de Matrices
 # Extrae las matrices de pesos de las 4 capas del modelo como diccionario {nombre: numpy array}.
 def get_weight_matrices(model):
     return {name: getattr(model, name).weight.data.cpu().numpy().copy()
@@ -53,7 +53,7 @@ def set_weight_matrices(model, weights_dict):
             getattr(model, name).weight.data.copy_(
                 torch.from_numpy(w.astype(np.float32)))
 
-# COMUNICACIÓ
+# Comunicación
 # Lee exactamente 'size' bytes del socket, acumulando chunks hasta completar.
 def recv_exact(conn, size):
     data = b''
@@ -75,14 +75,14 @@ def recv_pickle(conn):
     size = int.from_bytes(recv_exact(conn, 8), 'big')
     return pickle.loads(recv_exact(conn, size))
 
-# MODELO Y OPTIMIZADOR (persisten entre épocas)
+# Modelo y Optimizado (persisten entre épocas)
 # El modelo y el optimizador se crean una sola vez y se reusan en todas las épocas.
 # Los pesos se sobreescriben en cada época con los del maestro antes de entrenar.
 model     = MulticlassClassifier(input_dim=INPUT_DIM, num_classes=NUM_CLASSES)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-# LOOP PRINCIPAL DEL ESCLAVO
+# Loop principal del esclavo
 # El esclavo corre indefinidamente esperando conexiones del maestro Python.
 # Por cada conexión (= una época) hace:
 #   1. Recibe del maestro: pesos actuales del modelo + porción de datos (X, y)
