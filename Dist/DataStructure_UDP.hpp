@@ -309,7 +309,7 @@ public:
 	std::mutex mtx;
 public:
 
-	// Read the csv
+    // Divide el CSV en partes iguales y envía un lote (batch) único a cada cliente
 	void Raw_Matrix_file(int server_socket){
 		std::string path;
 
@@ -323,56 +323,88 @@ public:
 			return;
 		}
 
-		std::string matrix_data;
+		// 1. Leer el archivo por líneas (filas de la matriz)
+		std::vector<std::string> lines;
 		std::string line;
-
 		while(std::getline(reader,line)){
-			matrix_data += line;
-			matrix_data += '\n';
+			lines.push_back(line + '\n');
 		}
-
 		reader.close();
 
-		std::cout << "Matrix size -> " << matrix_data.size() << std::endl;
+		int total_lines = lines.size();
+		int num_clients = client_map.size();
 
-		int datagram_id = actual_datagram_id++;
+		if(num_clients == 0) {
+			std::cout << "No clients connected to distribute the matrix\n";
+			return;
+		}
+
+		std::cout << "Total matrix lines: " << total_lines << " | Distributing among " << num_clients << " clients." << std::endl;
+
+		// 2. Calcular cuántas líneas le tocan a cada cliente (división equitativa)
+		int lines_per_client = total_lines / num_clients;
+		int extra_lines = total_lines % num_clients; // Residuo para distribuir
+
+		int current_line_idx = 0;
+		int client_idx = 0;
 
 		for(const auto& client : client_map){
+			// Calcular el rango de líneas para este cliente en específico
+			int assigned_lines = lines_per_client + (client_idx < extra_lines ? 1 : 0);
+
+			std::string client_matrix_batch = "";
+			for(int i = 0; i < assigned_lines; ++i) {
+				client_matrix_batch += lines[current_line_idx++];
+			}
+
+			std::cout << "Client [" << client.first << "] gets " << assigned_lines << " lines. Batch size -> " << client_matrix_batch.size() << " bytes." << std::endl;
+
+			// =================================================================
+			// LÓGICA DE ENVÍO POR FRAGMENTOS (Mantenemos tu protocolo UDP original)
+			// =================================================================
+			int datagram_id = actual_datagram_id++; // ID único por transferencia de cliente
 			int seq = 0;
-			long long header =HEADER_SIZE+3+0+20;
-			long long max_content =DATAGRAM_SIZE - header;
-			long long total_fragments =(matrix_data.size() + max_content - 1)/ max_content;
+			long long header = HEADER_SIZE + 3 + 0 + 20;
+			long long max_content = DATAGRAM_SIZE - header;
+			long long total_fragments = (client_matrix_batch.size() + max_content - 1) / max_content;
 			int start = 0;
 
 			std::string sender = GetSenderKey(const_cast<sockaddr_in&>(client.second));
 			pending_transfers[sender].addr = client.second;
-			auto& file =pending_transfers[sender].client_datagrams[datagram_id];
+			auto& file = pending_transfers[sender].client_datagrams[datagram_id];
+
 			file.total_fragments = total_fragments;
-			file.matrix_size = matrix_data.size();
+			file.matrix_size = client_matrix_batch.size();
 			file.packets.resize(total_fragments);
 			file.payloads.resize(total_fragments);
-			file.acked.resize(total_fragments,false);
-			file.retransmitted.resize(total_fragments,false);
-			file.retries.resize(total_fragments,0);
+			file.acked.resize(total_fragments, false);
+			file.retransmitted.resize(total_fragments, false);
+			file.retries.resize(total_fragments, 0);
 			file.last_activity.resize(total_fragments);
-			for(int i=0;i<total_fragments;i++){
-				long long frag_size =std::min(max_content,(long long)matrix_data.size()-start);
-				std::string fragment =matrix_data.substr(start,frag_size);
-				ProtocolFormat protocol{'0',datagram_id,(int)total_fragments,seq++,'M',0,"",(long long)matrix_data.size(),fragment};
-				std::string packet =protocol.ConstructDatagram();
+
+			for(int i = 0; i < total_fragments; i++){
+				long long frag_size = std::min(max_content, (long long)client_matrix_batch.size() - start);
+				std::string fragment = client_matrix_batch.substr(start, frag_size);
+
+				// Usamos 'M' para enviar la matriz
+				ProtocolFormat protocol{'0', datagram_id, (int)total_fragments, seq++, 'M', 0, "", (long long)client_matrix_batch.size(), fragment};
+				std::string packet = protocol.ConstructDatagram();
 
 				while(packet.size() < DATAGRAM_SIZE){
 					packet.push_back('#');
 				}
 
-				packet[0] =protocol.Calculate_Checksum_Fragments(packet);
+				packet[0] = protocol.Calculate_Checksum_Fragments(packet);
 				file.packets[i]  = packet;
 				file.payloads[i] = fragment;
 				file.last_activity[i] = std::chrono::steady_clock::now();
-				sendto(server_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&client.second,sizeof(client.second));
+
+				sendto(server_socket, packet.data(), DATAGRAM_SIZE, 0, (sockaddr*)&client.second, sizeof(client.second));
 
 				start += frag_size;
 			}
+
+			client_idx++;
 		}
 	}
 
