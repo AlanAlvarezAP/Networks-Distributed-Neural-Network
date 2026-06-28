@@ -784,6 +784,21 @@ public:
 		std::cout << "Client Final Matrix | " << matrix_text << std::endl;
 		std::cout << "=======================================================" << std::endl;
 
+		// =================================================================
+		// EXTRA LOGIC FOR DEBUGGING (Exporting CSV for verification)
+		// =================================================================
+		std::string debug_filename = "debug_client_" + final_name + "_batch_" + std::to_string(proto.datagram_id) + ".csv";
+		std::ofstream debug_writer(debug_filename);
+		if (debug_writer.is_open()) {
+			debug_writer << matrix_text;
+			debug_writer.close();
+			std::cout << "[DEBUG] Exported received batch to local file: " << debug_filename << std::endl;
+		}
+		// =================================================================
+
+
+
+
 		pending_transfers.client_datagrams.erase(proto.datagram_id);
 
 		/*

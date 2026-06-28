@@ -1,4 +1,4 @@
-/* Client code in C */ 
+/* Client code in C */
 #include "DataStructure_UDP.hpp"
 
 Client_Protocols_UDP clp_UDP;
@@ -43,7 +43,7 @@ void read_thread_UDP(int SocketFD){
         char action=datagram[14];
 
         clp_UDP.Cases_Client_UDP(action, datagram, SocketFD, sender);
-		
+
     }
 }
 
@@ -52,7 +52,7 @@ int main(void){
     struct sockaddr_in stSockAddr;
     int SocketFD;
     SocketFD = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    
+
     int n;
 
     memset(&stSockAddr, 0, sizeof(struct sockaddr_in));
@@ -79,7 +79,7 @@ int main(void){
         }
 
         clp_UDP.Cases_Client_UDP(option,std::string{option},SocketFD,stSockAddr);
-        
+
     }
     std::cout << " LEAVING ... " << std::endl;
 	clp_UDP.running = false;

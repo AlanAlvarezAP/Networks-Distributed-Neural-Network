@@ -32,7 +32,7 @@ void read_thread_UDP(int SocketFD){
         char action=datagram[14];
 
         sv_UDP.Cases_Server(action, datagram, SocketFD, sender);
-        
+
     }
 }
 
@@ -40,16 +40,16 @@ void read_thread_UDP(int SocketFD){
 int main(void){
     struct sockaddr_in stSockAddr;
     int ServerFD;
-    
+
     ServerFD = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     int n;
- 
+
     memset(&stSockAddr, 0, sizeof(struct sockaddr_in));
- 
+
     stSockAddr.sin_family = AF_INET;
     stSockAddr.sin_port = htons(45000);
     stSockAddr.sin_addr.s_addr = INADDR_ANY;
- 
+
     bind(ServerFD,(const struct sockaddr *)&stSockAddr, sizeof(struct sockaddr_in));
 
     std::thread(read_thread_UDP,ServerFD).detach();
