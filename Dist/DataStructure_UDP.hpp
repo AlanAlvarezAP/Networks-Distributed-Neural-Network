@@ -309,7 +309,7 @@ public:
 	std::mutex mtx;
 public:
 
-    // Divide el CSV en partes iguales y envía un lote (batch) único a cada cliente
+    // Read and divide the csv
 	void Raw_Matrix_file(int server_socket){
 		std::string path;
 
@@ -323,7 +323,7 @@ public:
 			return;
 		}
 
-		// 1. Leer el archivo por líneas (filas de la matriz)
+		// Read by lines
 		std::vector<std::string> lines;
 		std::string line;
 		while(std::getline(reader,line)){
@@ -341,15 +341,14 @@ public:
 
 		std::cout << "Total matrix lines: " << total_lines << " | Distributing among " << num_clients << " clients." << std::endl;
 
-		// 2. Calcular cuántas líneas le tocan a cada cliente (división equitativa)
+		// Division
 		int lines_per_client = total_lines / num_clients;
-		int extra_lines = total_lines % num_clients; // Residuo para distribuir
+		int extra_lines = total_lines % num_clients;
 
 		int current_line_idx = 0;
 		int client_idx = 0;
 
 		for(const auto& client : client_map){
-			// Calcular el rango de líneas para este cliente en específico
 			int assigned_lines = lines_per_client + (client_idx < extra_lines ? 1 : 0);
 
 			std::string client_matrix_batch = "";
@@ -359,10 +358,8 @@ public:
 
 			std::cout << "Client [" << client.first << "] gets " << assigned_lines << " lines. Batch size -> " << client_matrix_batch.size() << " bytes." << std::endl;
 
-			// =================================================================
-			// LÓGICA DE ENVÍO POR FRAGMENTOS (Mantenemos tu protocolo UDP original)
-			// =================================================================
-			int datagram_id = actual_datagram_id++; // ID único por transferencia de cliente
+
+			int datagram_id = actual_datagram_id++;
 			int seq = 0;
 			long long header = HEADER_SIZE + 3 + 0 + 20;
 			long long max_content = DATAGRAM_SIZE - header;
@@ -385,8 +382,6 @@ public:
 			for(int i = 0; i < total_fragments; i++){
 				long long frag_size = std::min(max_content, (long long)client_matrix_batch.size() - start);
 				std::string fragment = client_matrix_batch.substr(start, frag_size);
-
-				// Usamos 'M' para enviar la matriz
 				ProtocolFormat protocol{'0', datagram_id, (int)total_fragments, seq++, 'M', 0, "", (long long)client_matrix_batch.size(), fragment};
 				std::string packet = protocol.ConstructDatagram();
 
