@@ -17,9 +17,9 @@ For the given project, we proposed the next protocol who ensures the **Reliable 
 
 ## For Normal data
 
-| 1 Byte | 4 Bytes | 4 Bytes   | 4 Bytes   | 5 Bytes   | 1 Byte  | 3 Bytes | Variable  | 20 Bytes | Variable | 
-|-------------|-------------|-------------|-------------|-------|-------------|---------------|-------------|---------------|-------------|
-| Hash (Checksum) | Datagram_id | Total packets   | Order(1,2,..,N)   | Sequence Number of data   | Action | Nickname size | Nickname origin | Payload total size | Payload data | 
+| 1 Byte | 4 Bytes | 4 Bytes   | 5 Bytes   | 1 Byte  | 3 Bytes | Variable  | 20 Bytes | Variable | 
+|-------------|-------------|-------------|-------|-------------|---------------|-------------|---------------|-------------|
+| Hash (Checksum) | Datagram_id | Total packets  | Sequence Number of data   | Action | Nickname size | Nickname origin | Payload total size | Payload data | 
 
 > Important to notice is that the datagrams will have a size of 500 bytes where the remaining space in the packet is going to be used for padding with the symbol '#'  
 > This protocol is going to be used in all communications but some fields maybe blank or with 0 and also de action will change depending of the type of action
@@ -31,15 +31,23 @@ For the given project, we proposed the next protocol who ensures the **Reliable 
 - M: reaction of the broadcast of the matrix in Clients
 - P: reaction of the result of the broadcast in server
 
-## For ACKs
-| 1 Byte | 5 Bytes | 3 Bytes | 3 Bytes |
-|-------------|-------------|-------------|-------------|
-| A | Sequence Number ACK | Total packets segment | Current packet segment |
+## ACK Packet Format
 
-## For NACKs
-| 1 Byte | 5 Bytes | 3 Bytes | 3 Bytes |
-|-------------|-------------|-------------|-------------|
-| N | Sequence Number NACK | Total packets segment | Current packet segment |
+| 1 Byte | 4 Bytes | 4 Bytes | 5 Bytes | 1 Byte | 3 Bytes | 20 Bytes |
+|--------|---------|---------|---------|--------|---------|----------|
+| Checksum | Datagram ID | Total Packets | Sequence Number | A | Nickname Size (0) | Matrix Size (0) |
+
+> **Note:** ACK packets do not include a nickname or matrix content. Therefore, `Nickname Size` and `Matrix Size` are always `0`.
+
+---
+
+## NACK Packet Format
+
+| 1 Byte | 4 Bytes | 4 Bytes | 5 Bytes | 1 Byte | 3 Bytes | 20 Bytes |
+|--------|---------|---------|---------|--------|---------|----------|
+| Checksum | Datagram ID | Total Packets | Sequence Number | N | Nickname Size (0) | Matrix Size (0) |
+
+> **Note:** NACK packets do not include a nickname or matrix content. Therefore, `Nickname Size` and `Matrix Size` are always `0`.
 
 ---
 ## Jacobson / Karels Algorithm
