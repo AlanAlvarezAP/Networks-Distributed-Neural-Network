@@ -282,7 +282,7 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
             if(file.retries[i] > 5){
                 continue;
             }
-			std::cout<< "[TIMEOUT] Datagram "<< datagram.first<< " fragment "<< std::endl;
+			std::cout<< "[TIMEOUT] Datagram "<< datagram.first<< " fragment "<< i << std::endl;
 			std::cout << "RESENDING " << file.packets[i] << " with size: " << file.packets[i].size() << std::endl;
             sendto(socket,file.packets[i].data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
 			file.last_activity[i] = now;
@@ -638,8 +638,8 @@ public:
 				break;
 			}
             default: {
-				std::cout << " Got sent -> " << buffer << std::endl;
-                std::cout << "This protocol is not registered in Server :( " << std::endl;
+				//std::cout << " Got sent -> " << buffer << std::endl;
+                //std::cout << "This protocol is not registered in Server :( " << std::endl;
                 break;
             }
         }
@@ -655,7 +655,7 @@ public:
 	std::string final_name,pending_name; // Logging name logic
 	std::mutex mtx; // Mutex
 	ClientInfo pending_transfers; // Transfers for a specific client
-
+	ClientInfo received_transfers;
 	bool received = false;
 
 public:
@@ -823,22 +823,22 @@ public:
 			}
 			return;
 		}
-		if(pending_transfers.client_datagrams.find(proto.datagram_id)== pending_transfers.client_datagrams.end()){
-			pending_transfers.client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
-			pending_transfers.client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
-			pending_transfers.client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
-			pending_transfers.client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
-			pending_transfers.client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
-			pending_transfers.client_datagrams[proto.datagram_id].retransmitted.resize(proto.total_packets,false);
-			pending_transfers.client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
-			pending_transfers.client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
+		if(received_transfers.client_datagrams.find(proto.datagram_id)== received_transfers.client_datagrams.end()){
+			received_transfers.client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
+			received_transfers.client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
+			received_transfers.client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
+			received_transfers.client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
+			received_transfers.client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
+			received_transfers.client_datagrams[proto.datagram_id].retransmitted.resize(proto.total_packets,false);
+			received_transfers.client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
+			received_transfers.client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
 		}
 
 		std::cout << "=======================================================" << std::endl;
 		std::cout << "Client Receiving Matrix ----> Fragment #" << proto.seq_number << " | " << buffer << std::endl;
 		std::cout << "=======================================================" << std::endl;
 
-		auto& file =pending_transfers.client_datagrams[proto.datagram_id];
+		auto& file =received_transfers.client_datagrams[proto.datagram_id];
 		file.packets[proto.seq_number] =buffer;
 		file.payloads[proto.seq_number] =proto.matrixcontent;
 		file.acked[proto.seq_number] = true;
@@ -897,7 +897,7 @@ public:
             weight_writer.close();
         }
 
-        pending_transfers.client_datagrams.erase(proto.datagram_id);
+        received_transfers.client_datagrams.erase(proto.datagram_id);
 
         received = true;
 
@@ -968,7 +968,7 @@ public:
 				break;
 			}
             default: {
-                std::cout << "This protocol is not registered in Client :( " << std::endl;
+                //std::cout << "This protocol is not registered in Client :( " << std::endl;
                 break;
             }
         }
