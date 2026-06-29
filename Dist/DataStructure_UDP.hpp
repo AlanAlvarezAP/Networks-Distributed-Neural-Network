@@ -829,12 +829,12 @@ public:
 
 	// Receiving the matrix from the master
 	void Matrix_react(const std::string& buffer,int client_socket,sockaddr_in& server_addr){
-		static bool first_time=true;
+		/*static bool first_time=true;
 		if(first_time){
 			std::cout << "SLEEPING ZZZZ" << std::endl;
 			std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 			first_time=false;
-		}
+		}*/
 		std::lock_guard<std::mutex>lock(mtx);
 		ProtocolFormat proto;
 		bool checksum_error=false;
