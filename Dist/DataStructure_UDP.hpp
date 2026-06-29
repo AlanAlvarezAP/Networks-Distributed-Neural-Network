@@ -171,8 +171,6 @@ void Send_NACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
 
 /* Function 06: function to parse the ack to their destination and also update dynamically update the Timeout*/
 void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
-	std::lock_guard<std::mutex> lock(mtx);
-
  	ProtocolFormat protocol;
 	bool checksum_error=false;
 	if(!protocol.ParseProtocol(buffer,checksum_error,'A')){
@@ -216,7 +214,6 @@ void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 
 /* Function 07: function to parse the nack to their destination and also retransmit the datagram*/
 void Parse_NACK(const std::string &buffer, ClientInfo& ci,int &socket,sockaddr_in& addr,std::mutex &mtx){
-	std::lock_guard<std::mutex> lock(mtx);
  	ProtocolFormat protocol;
 	bool checksum_error=false;
 	if(!protocol.ParseProtocol(buffer,checksum_error,'N')){
