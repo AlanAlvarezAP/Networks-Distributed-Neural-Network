@@ -311,8 +311,8 @@ public:
 
     // Read and divide the csv
 	void Raw_Matrix_file(int server_socket){
-		std::string weights_path = "weights.csv";
-		std::string data_path = "dataset.csv";
+		std::string weights_path = "test.csv";
+		std::string data_path = "Dataset of Diabetes.csv";
 
 		//std::cout << "Give me the path to csv -> ";
 		//std::getline(std::cin,path);
@@ -371,7 +371,7 @@ public:
 			std::string total_payload =  weights + "|" + client_matrix_batch;
 
 			std::cout << "Client [" << client.first << "] gets " << assigned_lines
-              << " lines + Weights. Total Payload size -> " << total_payload.size() << " bytes." << std::endl;
+              << " Weights + lines. Total Payload size -> " << total_payload.size() << " bytes." << std::endl;
 
 			int datagram_id = actual_datagram_id++;
 			int seq = 0;
@@ -603,7 +603,7 @@ public:
 	void TimeoutThread_Server(Server_Protocols_UDP* sv, int socket) {
 	    while (true) {
 			// Some sleep to prevent instatineous in the first fragment
-	        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+	        std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	        std::lock_guard<std::mutex> lock(sv->mtx);
 	        for(auto& pair : sv->pending_transfers){
 			    ClientInfo& ci = pair.second;
