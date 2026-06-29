@@ -76,6 +76,7 @@ struct SentFile{
 struct ClientInfo{
 	sockaddr_in addr;
 	std::map<int,SentFile> client_datagrams;
+	bool first_rtt_sample = true;
 	double EstRTT = 1000.0;
 	double Dev = 0.0;
 	double Timeout = 1000.0;
@@ -186,15 +187,22 @@ void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 	auto now = std::chrono::steady_clock::now();
 	if(!it->second.retransmitted[protocol.seq_number]){
 		double SampleRTT =std::chrono::duration_cast<std::chrono::milliseconds>(now-it->second.last_activity[protocol.seq_number]).count();
-		double Diff = SampleRTT - ci.EstRTT;
-		ci.EstRTT= ci.EstRTT + ci.delta*Diff;
-		ci.Dev=ci.Dev+ci.delta*(std::abs(Diff)-ci.Dev);
+		
+		if(ci.first_rtt_sample){
+			ci.EstRTT= SampleRTT;
+			ci.Dev=SampleRTT/2.0;
+			ci.first_rtt_sample=false;	
+		}else{
+			double Diff = SampleRTT - ci.EstRTT;
+			ci.EstRTT= ci.EstRTT + ci.delta*Diff;
+			ci.Dev=ci.Dev+ci.delta*(std::abs(Diff)-ci.Dev);
+		}
 		ci.Timeout = ci.mu*ci.EstRTT+ci.fi*ci.Dev;
 		std::cout << "[DYNAMIC TIMEOUT] Updated to " << ci.Timeout << std::endl;
 	}
 	it->second.retransmitted[protocol.seq_number] = false;
 	if(protocol.seq_number >= 0 && protocol.seq_number < (int)it->second.acked.size()){
-		std::cout << "[ACK] confirmed :D for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
+		//std::cout << "[ACK] confirmed :D for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
  		it->second.acked[protocol.seq_number] = true;
 	}
 
@@ -266,6 +274,7 @@ void Send_Error(int socket,sockaddr_in& addr,const std::string& msg){
 /* Function 10: function to check all timeout logic PER CLIENT and also check if the datagram was retransmitted more than 5 times descarded*/
 void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
     auto now = std::chrono::steady_clock::now();
+	int amount_retransmitted=0;
     for(auto& datagram : ci.client_datagrams){
         SentFile& file = datagram.second;
         for(int i=0;i<(int)file.acked.size();i++){
@@ -279,13 +288,16 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
 			}
             file.retries[i]++;
 			file.retransmitted[i] = true;
-            if(file.retries[i] > 5){
-                continue;
-            }
+			ci.Timeout = std::min(ci.Timeout*2.0,60000.0);
 			std::cout<< "[TIMEOUT] Datagram "<< datagram.first<< " fragment "<< i << std::endl;
-			std::cout << "RESENDING " << file.packets[i] << " with size: " << file.packets[i].size() << std::endl;
+			//std::cout << "RESENDING " << file.packets[i] << " with size: " << file.packets[i].size() << std::endl;
             sendto(socket,file.packets[i].data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
 			file.last_activity[i] = now;
+			amount_retransmitted++;
+			if(amount_retransmitted >= 20){
+				return;
+			}
+			std::this_thread::sleep_for(std::chrono::microseconds(300));
         }
 
     }
@@ -549,8 +561,13 @@ public:
 		file.acked[proto.seq_number] = true;
 		file.last_activity[proto.seq_number] = std::chrono::steady_clock::now();
 		Send_ACK(proto,server_socket,client_addr);
-		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
 
+		int received_count=std::count(file.acked.begin(),file.acked.end(),true);
+		std::cout << "[PROGRESS] Client " << sender << " datagram " << proto.datagram_id
+		<< " -> fragment " << proto.seq_number << " | " << received_count << "/" << file.total_fragments
+		<< " received" << std::endl; 
+
+		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
 		if(!all){
 			return;
 		}
@@ -845,6 +862,11 @@ public:
 		file.last_activity[proto.seq_number] = std::chrono::steady_clock::now();
 
 		Send_ACK(proto,client_socket,server_addr);
+		int received_count=std::count(file.acked.begin(),file.acked.end(),true);
+		std::cout << "[PROGRESS] Client datagram " << proto.datagram_id
+		<< " -> fragment " << proto.seq_number << " | " << received_count << "/" << file.total_fragments
+		<< " received" << std::endl; 
+
 		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
 
 		if(!all){
@@ -911,7 +933,7 @@ public:
 	// Timeout exclusively for the client thread
 	void TimeoutThread_Client(Client_Protocols_UDP* cl, int socket, sockaddr_in server_addr) {
 	    while (cl->running) {
-	        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	        std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	        std::lock_guard<std::mutex> lock(cl->mtx);
 	        CheckTimeouts(cl->pending_transfers, socket, server_addr);
 	    }
