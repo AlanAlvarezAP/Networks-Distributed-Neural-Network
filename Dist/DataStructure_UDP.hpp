@@ -559,6 +559,31 @@ public:
 		std::cout << result << std::endl;
 		std::cout << "====================================" << std::endl;
 
+
+
+
+		std::string client_final_name = "unknown_client";
+
+		for (const auto& pair : client_map) {
+			if (pair.second.sin_addr.s_addr == client_addr.sin_addr.s_addr &&
+			    pair.second.sin_port == client_addr.sin_port) {
+				client_final_name = pair.first;
+				break;
+			}
+		}
+
+		std::string output_filename = client_final_name + "_weight.csv";
+
+		std::ofstream csv_file(output_filename);
+		if (csv_file.is_open()) {
+			csv_file << result;
+			csv_file.close();
+			std::cout << "[SUCCESS] Saved final client weights into: " << output_filename << std::endl;
+		} else {
+			std::cout << "[ERROR] Could not open or create file: " << output_filename << std::endl;
+		}
+
+
 		pending_transfers[sender].client_datagrams.erase(proto.datagram_id);
 	}
 
@@ -648,9 +673,9 @@ public:
 		int seq_numbers{0};
 
 	    // First fragment
-		int header=HEADER_SIZE+3+pending_name.size()+20+0;
-		int remaining_size_first=DATAGRAM_SIZE-header;
-		int current_size =std::min(remaining_size_first,(int)pending_name.size());
+		int header= HEADER_SIZE+3+pending_name.size()+20+0;
+		int remaining_size_first= DATAGRAM_SIZE-header;
+		int current_size = std::min(remaining_size_first,(int)pending_name.size());
 
 	    int total_remaining = (int)pending_name.size() - current_size;
 	    int max_content = DATAGRAM_SIZE - header;
@@ -714,11 +739,24 @@ public:
     }
 
 	// To response doing something and resending to the master
-	void Broadcast_Response(const std::string& result,int client_socket,sockaddr_in& server_addr){
+	void Broadcast_Response(const std::string& filename,int client_socket,sockaddr_in& server_addr){
+	    std::ifstream file_reader(filename);
+		if (!file_reader.is_open()) {
+			std::cout << "[ERROR] Broadcast_Response: Could not open file " << filename << std::endl;
+			Send_Error(client_socket, server_addr, "ERROR: Client file could not be opened");
+			return;
+		}
+
+		std::stringstream buffer_stream;
+		buffer_stream << file_reader.rdbuf();
+		std::string result = buffer_stream.str();
+		file_reader.close();
+
+
 		int seq = 0;
 
-		long long header =HEADER_SIZE+3+0+20;
-		long long max_content =DATAGRAM_SIZE - header;
+		long long header = HEADER_SIZE+3+0+20;
+		long long max_content = DATAGRAM_SIZE - header;
 		long long total_fragments =(result.size()+max_content-1)/max_content;
 
 		int start = 0;
