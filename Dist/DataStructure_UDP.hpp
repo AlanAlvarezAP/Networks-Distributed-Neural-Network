@@ -288,7 +288,6 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
 			}
             file.retries[i]++;
 			file.retransmitted[i] = true;
-			ci.Timeout = std::min(ci.Timeout*2.0,60000.0);
 			std::cout<< "[TIMEOUT] Datagram "<< datagram.first<< " fragment "<< i << std::endl;
 			//std::cout << "RESENDING " << file.packets[i] << " with size: " << file.packets[i].size() << std::endl;
             sendto(socket,file.packets[i].data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
