@@ -4,21 +4,21 @@
 
 namespace py = pybind11;
 
-
+// Instancia global idéntica a client.cpp
 Client_Protocols_UDP clp_UDP;
-
 
 class PyClient {
 private:
-    int socketFD;
+    int SocketFD;
     struct sockaddr_in stSockAddr;
 
 public:
     PyClient() {
-        socketFD = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        SocketFD = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
         memset(&stSockAddr, 0, sizeof(struct sockaddr_in));
+
         stSockAddr.sin_family = AF_INET;
-        stSockAddr.sin_port = htons(45000); // Puerto por defecto
+        stSockAddr.sin_port = htons(45000);
         inet_pton(AF_INET, "127.0.0.1", &stSockAddr.sin_addr);
 
         clp_UDP.running = true;
@@ -26,35 +26,44 @@ public:
     }
 
     void iniciar_hilos() {
-        // Hilo de lectura UDP del cliente
+        // Hilo de lectura UDP idéntico a read_thread_UDP de client.cpp
         std::thread([this]() {
             char buffer[500];
             sockaddr_in sender;
             socklen_t len = sizeof(sender);
-            while(clp_UDP.running){
-                int n = recvfrom(this->socketFD, buffer, sizeof(buffer), 0, (sockaddr*)&sender, &len);
-                if(n <= 0) continue;
+            while (clp_UDP.running) {
+                int n = recvfrom(this->SocketFD, buffer, sizeof(buffer), 0, (sockaddr*)&sender, &len);
+                if (n <= 0) {
+                    continue;
+                }
                 std::string datagram(buffer, n);
                 char action = datagram[14];
-                clp_UDP.Cases_Client_UDP(action, datagram, this->socketFD, sender);
+                clp_UDP.Cases_Client_UDP(action, datagram, this->SocketFD, sender);
             }
         }).detach();
 
-        // Hilo de gestión de Timeouts nativo del cliente
-        std::thread(&Client_Protocols_UDP::TimeoutThread_Client, &clp_UDP, &clp_UDP, this->socketFD, this->stSockAddr).detach();
+        // Hilo de timeouts dinámicos idéntico a client.cpp
+        std::thread(&Client_Protocols_UDP::TimeoutThread_Client, &clp_UDP, &clp_UDP, this->SocketFD, this->stSockAddr).detach();
     }
 
-
+    // Ejecuta las acciones ('L' u 'O') de la misma forma que el menú nativo
     void ejecutar_accion(char opcion) {
-        clp_UDP.Cases_Client_UDP(opcion, std::string{opcion}, this->socketFD, this->stSockAddr);
+        // Liberamos GIL ya que la función Login de C++ hace un std::getline interactivo
+        py::gil_scoped_release release;
+        clp_UDP.Cases_Client_UDP(opcion, std::string{opcion}, this->SocketFD, this->stSockAddr);
     }
 
-    bool esta_corriendo() { return clp_UDP.running; }
-    bool esta_logeado() { return clp_UDP.logging_status; }
+    bool esta_corriendo() {
+        return clp_UDP.running;
+    }
+
+    bool esta_logeado() {
+        return clp_UDP.logging_status;
+    }
 
     void cerrar() {
         clp_UDP.running = false;
-        close(socketFD);
+        close(SocketFD);
     }
 };
 

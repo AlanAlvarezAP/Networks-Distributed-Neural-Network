@@ -1,6 +1,18 @@
+import sys
 import time
 
 import mi_cliente_udp
+
+
+def mostrar_menu():
+    print("===================================")
+    print("|          Welcome to             |")
+    print("|      Matrix NN distribution     |")
+    print("|                                 |")
+    print("|  1. Login                       |")
+    print("|  2. Logout                      |")
+    print("===================================")
+
 
 print("[Python] Instanciando el Cliente de C++...")
 client = mi_cliente_udp.PyClient()
@@ -8,16 +20,25 @@ client = mi_cliente_udp.PyClient()
 print("[Python] Levantando hilos de lectura y timeouts...")
 client.iniciar_hilos()
 
-print("[Python] Lanzando acción de Login...")
-
-client.ejecutar_accion("L")
+mostrar_menu()
 
 try:
     while client.esta_corriendo():
-        if client.esta_logeado():
-            print("[Python Status] Estado actual: Logeado en el servidor.")
-        time.sleep(2)
+        print("SELECT AN ACTION :D ")
+        opcion = input().strip()
+
+        if opcion == "1":
+            client.ejecutar_accion("L")
+
+        elif opcion == "2":
+            client.ejecutar_accion("O")
+            client.cerrar()
+            break
+        else:
+            client.ejecutar_accion("z")
+
 except KeyboardInterrupt:
-    print("\n[Python] Saliendo y enviando Logout...")
-    client.ejecutar_accion("O")
-    client.cerrar()
+    print("\n[Python] Interrupción detectada. Saliendo de forma segura...")
+    if client.esta_corriendo():
+        client.ejecutar_accion("O")
+        client.cerrar()

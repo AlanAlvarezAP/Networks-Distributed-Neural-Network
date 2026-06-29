@@ -27,12 +27,11 @@ try:
         opcion = input("SELECT AN ACTION :D -> ").strip()
 
         if opcion == "1":
-            total_clientes = server.cantidad_clientes()
+            total_clientes = server.obtener_cantidad_clientes()
             if total_clientes < 3:
                 print(
                     f"\n[WARNING] Need more clients !!! (Activos actualmente: {total_clientes})\n"
                 )
-                # time.sleep(1)
                 continue
 
             print("\n[Python] Cediendo control a C++ para leer la ruta del CSV...")
@@ -50,7 +49,7 @@ try:
             break
 
         else:
-            print("\n[Invalid option] Intenta de nuevo.\n")
+            print("\n[Invalid option] Intenta de nuevo.\\n")
             time.sleep(1)
 
 except KeyboardInterrupt:
