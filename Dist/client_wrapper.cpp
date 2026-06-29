@@ -26,7 +26,6 @@ public:
     }
 
     void iniciar_hilos() {
-
         std::thread([this]() {
             char buffer[500];
             sockaddr_in sender;
@@ -64,6 +63,22 @@ public:
         clp_UDP.running = false;
         close(SocketFD);
     }
+
+    void enviar_resultado_csv(const std::string& filename) {
+        clp_UDP.Broadcast_Response(filename, this->SocketFD, this->stSockAddr);
+    }
+
+    bool tiene_datos_nuevos() {
+            return clp_UDP.received;
+    }
+
+    void reset_datos_nuevos() {
+        clp_UDP.received = false;
+    }
+
+    std::string obtener_nombre() {
+            return clp_UDP.final_name;
+    }
 };
 
 PYBIND11_MODULE(mi_cliente_udp, m) {
@@ -73,5 +88,9 @@ PYBIND11_MODULE(mi_cliente_udp, m) {
         .def("ejecutar_accion", &PyClient::ejecutar_accion)
         .def("esta_corriendo", &PyClient::esta_corriendo)
         .def("esta_logeado", &PyClient::esta_logeado)
-        .def("cerrar", &PyClient::cerrar);
+        .def("cerrar", &PyClient::cerrar)
+        .def("enviar_resultado_csv", &PyClient::enviar_resultado_csv)
+        .def("tiene_datos_nuevos", &PyClient::tiene_datos_nuevos)
+        .def("reset_datos_nuevos", &PyClient::reset_datos_nuevos)
+        .def("obtener_nombre", &PyClient::obtener_nombre);
 }

@@ -572,7 +572,7 @@ public:
 			}
 		}
 
-		std::string output_filename = client_final_name + "_weight.csv";
+		std::string output_filename = client_final_name + "_weight_received.csv";
 
 		std::ofstream csv_file(output_filename);
 		if (csv_file.is_open()) {
@@ -899,9 +899,11 @@ public:
 
         received = true;
 
+        std::cout << "Cliente recibió: " << weight_filename << " y " << batch_filename << "\n";
+
 		//std::string result = matrix_text;
 
-		//Broadcast_Response(result,client_socket,server_addr);
+		//Broadcast_Response(weight_filename,client_socket,server_addr);
 	}
 
 	// Timeout exclusively for the client thread
