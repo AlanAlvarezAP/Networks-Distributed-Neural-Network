@@ -273,7 +273,7 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
                 continue;
             }
 			auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity[i]).count();
-			std::cout << "Elapsed time -> " << elapsed << std::endl;
+			//std::cout << "Elapsed time -> " << elapsed << std::endl;
 			if(elapsed < ci.Timeout){
 				continue;
 			}
@@ -310,26 +310,38 @@ public:
 public:
 
     // Read and divide the csv
-	void Raw_Matrix_file(int server_socket,const std::string& weights){
-		std::string path = "dataset.csv";
+	void Raw_Matrix_file(int server_socket){
+		std::string weights_path = "weights.csv";
+		std::string data_path = "dataset.csv";
 
 		//std::cout << "Give me the path to csv -> ";
 		//std::getline(std::cin,path);
 
-		std::ifstream reader(path);
-
-		if(!reader.is_open()){
+		std::ifstream weights_reader(weights_path);
+		if(!weights_reader.is_open()){
 			std::cout << "Couldn't open file\n";
 			return;
 		}
+		std::stringstream weights_buffer;
+        weights_buffer << weights_reader.rdbuf();
+        std::string weights = weights_buffer.str();
+        weights_reader.close();
 
-		// Read by lines
+
+		std::ifstream data_reader(data_path);
+		if(!data_reader.is_open()){
+			std::cout << "Couldn't open file\n";
+			return;
+		}
 		std::vector<std::string> lines;
 		std::string line;
-		while(std::getline(reader,line)){
+		while(std::getline(data_reader,line)){
 			lines.push_back(line + '\n');
 		}
-		reader.close();
+		data_reader.close();
+
+
+
 
 		int total_lines = lines.size();
 		int num_clients = client_map.size();
@@ -591,7 +603,7 @@ public:
 	void TimeoutThread_Server(Server_Protocols_UDP* sv, int socket) {
 	    while (true) {
 			// Some sleep to prevent instatineous in the first fragment
-	        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	        std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	        std::lock_guard<std::mutex> lock(sv->mtx);
 	        for(auto& pair : sv->pending_transfers){
 			    ClientInfo& ci = pair.second;
@@ -859,16 +871,10 @@ public:
             return;
         }
 
-        // Extraemos el tamaño guardado al inicio
-        int weights_size = std::stoi(total_payload.substr(0, first_pipe));
-
-        // El string de pesos empieza en 0
-        size_t weights_start = 0;
-        std::string weights_text = total_payload.substr(weights_start, first_pipe);
-
+        // El string de pesos es todo lo que está antes del primer '|'
+        std::string weights_text = total_payload.substr(0, first_pipe);
         // El lote de la matriz empieza justo después del primer '|'
-        size_t matrix_start = first_pipe + 1;
-        std::string matrix_text = total_payload.substr(matrix_start);
+        std::string matrix_text = total_payload.substr(first_pipe + 1);
 
 
         std::cout << "=======================================================" << std::endl;

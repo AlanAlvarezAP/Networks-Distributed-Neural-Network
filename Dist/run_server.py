@@ -35,7 +35,7 @@ try:
                 continue
 
             print("\n[Python] Cediendo control a C++ para leer la ruta del CSV...")
-            server.cargar_matriz_csv("1,2.685,1.55,3,9")
+            server.cargar_matriz_csv()
             print("[Python] Matriz procesada y enviada.\n")
 
         elif opcion == "2":

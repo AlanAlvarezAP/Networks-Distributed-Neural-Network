@@ -49,10 +49,10 @@ public:
     }
 
     // Opción 1
-    void cargar_matriz_csv(const std::string& weights) {
+    void cargar_matriz_csv() {
         // Liberamos el GIL temporalmente ya que Raw_Matrix_file pedirá std::getline en la terminal
         py::gil_scoped_release release;
-        sv_UDP.Raw_Matrix_file(ServerFD,weights);
+        sv_UDP.Raw_Matrix_file(ServerFD);
     }
 
     // Opción 2
