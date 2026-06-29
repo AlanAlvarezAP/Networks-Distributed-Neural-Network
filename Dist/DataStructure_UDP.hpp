@@ -171,6 +171,7 @@ void Send_NACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
 
 /* Function 06: function to parse the ack to their destination and also update dynamically update the Timeout*/
 void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
+	std::lock_guard<std::mutex> lock(mtx);
  	ProtocolFormat protocol;
 	bool checksum_error=false;
 	if(!protocol.ParseProtocol(buffer,checksum_error,'A')){
@@ -214,7 +215,8 @@ void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 
 /* Function 07: function to parse the nack to their destination and also retransmit the datagram*/
 void Parse_NACK(const std::string &buffer, ClientInfo& ci,int &socket,sockaddr_in& addr,std::mutex &mtx){
- 	ProtocolFormat protocol;
+ 	std::lock_guard<std::mutex> lock(mtx);
+	ProtocolFormat protocol;
 	bool checksum_error=false;
 	if(!protocol.ParseProtocol(buffer,checksum_error,'N')){
 		return;
@@ -280,7 +282,8 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
             }
 			auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity[i]).count();
 			//std::cout << "Elapsed time -> " << elapsed << std::endl;
-			
+			std::cout << "[DEBUG] Paquete " << i << " | Tiempo transcurrido: " << elapsed << " ms"
+			<< " | Tiempo configurado: " << ci.Timeout << " ms" << std::endl;
 			double effective_timeout=ci.Timeout;
 			if(ci.first_rtt_sample){
 				effective_timeout=ci.Timeout*(1+file.retries[i]);
@@ -422,7 +425,7 @@ public:
 				file.last_activity[i] = std::chrono::steady_clock::now();
 
 				sendto(server_socket, packet.data(), DATAGRAM_SIZE, 0, (sockaddr*)&client.second, sizeof(client.second));
-				std::this_thread::sleep_for(std::chrono::milliseconds(200));
+				std::this_thread::sleep_for(std::chrono::microseconds(200));
 				start += frag_size;
 			}
 
