@@ -311,10 +311,10 @@ public:
 
     // Read and divide the csv
 	void Raw_Matrix_file(int server_socket,const std::string& weights){
-		std::string path;
+		std::string path = "dataset.csv";
 
-		std::cout << "Give me the path to csv -> ";
-		std::getline(std::cin,path);
+		//std::cout << "Give me the path to csv -> ";
+		//std::getline(std::cin,path);
 
 		std::ifstream reader(path);
 
@@ -572,7 +572,7 @@ public:
 			}
 		}
 
-		std::string output_filename = client_final_name + "_weight_received.csv";
+		std::string output_filename = "returned_" + client_final_name + "_weight_received.csv";
 
 		std::ofstream csv_file(output_filename);
 		if (csv_file.is_open()) {
@@ -852,9 +852,7 @@ public:
 		}
 
 
-		// =================================================================
-        // NUEVA LÓGICA DE SEPARACIÓN EN MATRIX_REACT
-        // =================================================================
+
         size_t first_pipe = total_payload.find('|');
         if (first_pipe == std::string::npos) {
             std::cout << "[ERROR] Formato de payload inválido." << std::endl;
@@ -872,23 +870,21 @@ public:
         size_t matrix_start = first_pipe + 1;
         std::string matrix_text = total_payload.substr(matrix_start);
 
-        // =================================================================
-        // VERIFICACIÓN
-        // =================================================================
+
         std::cout << "=======================================================" << std::endl;
         std::cout << "Clasificador (Pesos) recibidos con éxito: " << weights_text << std::endl;
         std::cout << "Tamaño de la Matriz del Cliente: " << matrix_text.size() << " bytes." << std::endl;
         std::cout << "=======================================================" << std::endl;
 
 
-        std::string batch_filename = final_name + "_batch_" + std::to_string(proto.datagram_id) + ".csv";
+        std::string batch_filename = final_name + "_batch_sc.csv";
         std::ofstream matrix_writer(batch_filename);
         if (matrix_writer.is_open()) {
             matrix_writer << matrix_text;
             matrix_writer.close();
         }
 
-        std::string weight_filename = final_name + "_weight_" + std::to_string(proto.datagram_id) + ".csv";
+        std::string weight_filename = final_name + "_weight_sc.csv";
         std::ofstream weight_writer(weight_filename);
         if (weight_writer.is_open()) {
             weight_writer << weights_text;
