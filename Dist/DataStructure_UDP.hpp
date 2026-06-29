@@ -283,7 +283,12 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
             }
 			auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity[i]).count();
 			//std::cout << "Elapsed time -> " << elapsed << std::endl;
-			if(elapsed < ci.Timeout){
+			
+			double effective_timeout=ci.Timeout;
+			if(ci.first_rtt_sample){
+				effective_timeout=ci.Timeout*(1+file.retries[i]);
+			}
+			if(elapsed < effective_timeout){
 				continue;
 			}
             file.retries[i]++;
@@ -420,7 +425,7 @@ public:
 				file.last_activity[i] = std::chrono::steady_clock::now();
 
 				sendto(server_socket, packet.data(), DATAGRAM_SIZE, 0, (sockaddr*)&client.second, sizeof(client.second));
-
+				std::this_thread::sleep_for(std::chrono::milliseconds(200));
 				start += frag_size;
 			}
 
@@ -619,7 +624,7 @@ public:
 	void TimeoutThread_Server(Server_Protocols_UDP* sv, int socket) {
 	    while (true) {
 			// Some sleep to prevent instatineous in the first fragment
-	        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+	        std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	        std::lock_guard<std::mutex> lock(sv->mtx);
 	        for(auto& pair : sv->pending_transfers){
 			    ClientInfo& ci = pair.second;
@@ -932,7 +937,7 @@ public:
 	// Timeout exclusively for the client thread
 	void TimeoutThread_Client(Client_Protocols_UDP* cl, int socket, sockaddr_in server_addr) {
 	    while (cl->running) {
-	        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+	        std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	        std::lock_guard<std::mutex> lock(cl->mtx);
 	        CheckTimeouts(cl->pending_transfers, socket, server_addr);
 	    }
