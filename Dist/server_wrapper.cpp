@@ -1,10 +1,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <string>
 #include "DataStructure_UDP.hpp"
 
 namespace py = pybind11;
 
-// Instancia global idéntica a server.cpp
+
 Server_Protocols_UDP sv_UDP;
 
 class PyServer {
@@ -27,7 +28,6 @@ public:
         bind(ServerFD, (const struct sockaddr *)&stSockAddr, sizeof(struct sockaddr_in));
         running = true;
 
-        // Hilo de lectura UDP idéntico a read_thread_UDP de server.cpp
         std::thread([this]() {
             char buffer[500];
             sockaddr_in sender;
@@ -41,23 +41,21 @@ public:
                 std::string datagram(buffer, n);
                 char action = datagram[14];
 
-                // Procesar caso
                 sv_UDP.Cases_Server(action, datagram, this->ServerFD, sender);
             }
         }).detach();
 
-        // Hilo de gestión de timeouts nativo de server.cpp
         std::thread(&Server_Protocols_UDP::TimeoutThread_Server, &sv_UDP, &sv_UDP, ServerFD).detach();
     }
 
-    // Opción 1 del menú
-    void cargar_matriz_csv() {
+    // Opción 1
+    void cargar_matriz_csv(const std::string& weights) {
         // Liberamos el GIL temporalmente ya que Raw_Matrix_file pedirá std::getline en la terminal
         py::gil_scoped_release release;
-        sv_UDP.Raw_Matrix_file(ServerFD);
+        sv_UDP.Raw_Matrix_file(ServerFD,weights);
     }
 
-    // Opción 2 del menú
+    // Opción 2
     void mostrar_clientes() {
         print(sv_UDP.client_map);
     }
@@ -66,7 +64,6 @@ public:
         return sv_UDP.client_map.size();
     }
 
-    // Opción 3 del menú / Destructor
     void cerrar() {
         if (running) {
             running = false;

@@ -310,7 +310,7 @@ public:
 public:
 
     // Read and divide the csv
-	void Raw_Matrix_file(int server_socket){
+	void Raw_Matrix_file(int server_socket,const std::string& weights){
 		std::string path;
 
 		std::cout << "Give me the path to csv -> ";
@@ -356,14 +356,16 @@ public:
 				client_matrix_batch += lines[current_line_idx++];
 			}
 
-			std::cout << "Client [" << client.first << "] gets " << assigned_lines << " lines. Batch size -> " << client_matrix_batch.size() << " bytes." << std::endl;
+			std::string total_payload =  weights + "|" + client_matrix_batch;
 
+			std::cout << "Client [" << client.first << "] gets " << assigned_lines
+              << " lines + Weights. Total Payload size -> " << total_payload.size() << " bytes." << std::endl;
 
 			int datagram_id = actual_datagram_id++;
 			int seq = 0;
 			long long header = HEADER_SIZE + 3 + 0 + 20;
 			long long max_content = DATAGRAM_SIZE - header;
-			long long total_fragments = (client_matrix_batch.size() + max_content - 1) / max_content;
+			long long total_fragments = (total_payload.size() + max_content - 1) / max_content;
 			int start = 0;
 
 			std::string sender = GetSenderKey(const_cast<sockaddr_in&>(client.second));
@@ -371,7 +373,7 @@ public:
 			auto& file = pending_transfers[sender].client_datagrams[datagram_id];
 
 			file.total_fragments = total_fragments;
-			file.matrix_size = client_matrix_batch.size();
+			file.matrix_size = total_payload.size();
 			file.packets.resize(total_fragments);
 			file.payloads.resize(total_fragments);
 			file.acked.resize(total_fragments, false);
@@ -380,9 +382,9 @@ public:
 			file.last_activity.resize(total_fragments);
 
 			for(int i = 0; i < total_fragments; i++){
-				long long frag_size = std::min(max_content, (long long)client_matrix_batch.size() - start);
-				std::string fragment = client_matrix_batch.substr(start, frag_size);
-				ProtocolFormat protocol{'0', datagram_id, (int)total_fragments, seq++, 'M', 0, "", (long long)client_matrix_batch.size(), fragment};
+				long long frag_size = std::min(max_content, (long long)total_payload.size() - start);
+				std::string fragment = total_payload.substr(start, frag_size);
+				ProtocolFormat protocol{'0', datagram_id, (int)total_fragments, seq++, 'M', 0, "", (long long)total_payload.size(), fragment};
 				std::string packet = protocol.ConstructDatagram();
 
 				while(packet.size() < DATAGRAM_SIZE){
@@ -616,6 +618,9 @@ public:
 	std::string final_name,pending_name; // Logging name logic
 	std::mutex mtx; // Mutex
 	ClientInfo pending_transfers; // Transfers for a specific client
+
+	bool received = false;
+
 public:
 	// Error logic
     void Error(const std::string& buffer) {
@@ -795,46 +800,70 @@ public:
 		if(!all){
 			return;
 		}
-		std::string matrix_text;
+
+
+		std::string total_payload;
 
 		long long written = 0;
 
 		for(const auto& frag : file.payloads){
-			long long remaining =file.matrix_size - written;
-			long long take =std::min((long long)frag.size(),remaining);
-			matrix_text += frag.substr(0,take);
+			long long remaining = file.matrix_size - written;
+			long long take = std::min((long long)frag.size(),remaining);
+			total_payload += frag.substr(0,take);
 			written += take;
 		}
 
 
-		std::cout << "=======================================================" << std::endl;
-		std::cout << "Client Final Matrix | " << matrix_text << std::endl;
-		std::cout << "=======================================================" << std::endl;
-
 		// =================================================================
-		// EXTRA LOGIC FOR DEBUGGING (Exporting CSV for verification)
-		// =================================================================
-		std::string debug_filename = "debug_client_" + final_name + "_batch_" + std::to_string(proto.datagram_id) + ".csv";
-		std::ofstream debug_writer(debug_filename);
-		if (debug_writer.is_open()) {
-			debug_writer << matrix_text;
-			debug_writer.close();
-			std::cout << "[DEBUG] Exported received batch to local file: " << debug_filename << std::endl;
-		}
-		// =================================================================
+        // NUEVA LÓGICA DE SEPARACIÓN EN MATRIX_REACT
+        // =================================================================
+        size_t first_pipe = total_payload.find('|');
+        if (first_pipe == std::string::npos) {
+            std::cout << "[ERROR] Formato de payload inválido." << std::endl;
+            return;
+        }
+
+        // Extraemos el tamaño guardado al inicio
+        int weights_size = std::stoi(total_payload.substr(0, first_pipe));
+
+        // El string de pesos empieza en 0
+        size_t weights_start = 0;
+        std::string weights_text = total_payload.substr(weights_start, first_pipe);
+
+        // El lote de la matriz empieza justo después del primer '|'
+        size_t matrix_start = first_pipe + 1;
+        std::string matrix_text = total_payload.substr(matrix_start);
+
+        // =================================================================
+        // VERIFICACIÓN
+        // =================================================================
+        std::cout << "=======================================================" << std::endl;
+        std::cout << "Clasificador (Pesos) recibidos con éxito: " << weights_text << std::endl;
+        std::cout << "Tamaño de la Matriz del Cliente: " << matrix_text.size() << " bytes." << std::endl;
+        std::cout << "=======================================================" << std::endl;
 
 
+        std::string batch_filename = final_name + "_batch_" + std::to_string(proto.datagram_id) + ".csv";
+        std::ofstream matrix_writer(batch_filename);
+        if (matrix_writer.is_open()) {
+            matrix_writer << matrix_text;
+            matrix_writer.close();
+        }
 
+        std::string weight_filename = final_name + "_weight_" + std::to_string(proto.datagram_id) + ".csv";
+        std::ofstream weight_writer(weight_filename);
+        if (weight_writer.is_open()) {
+            weight_writer << weights_text;
+            weight_writer.close();
+        }
 
-		pending_transfers.client_datagrams.erase(proto.datagram_id);
+        pending_transfers.client_datagrams.erase(proto.datagram_id);
 
-		/*
-			OJITO AQUI MASOMENOS DEBERIA IR PYTHON
-		*/
+        received = true;
 
-		std::string result = matrix_text;
+		//std::string result = matrix_text;
 
-		Broadcast_Response(result,client_socket,server_addr);
+		//Broadcast_Response(result,client_socket,server_addr);
 	}
 
 	// Timeout exclusively for the client thread

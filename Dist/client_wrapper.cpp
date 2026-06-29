@@ -26,7 +26,7 @@ public:
     }
 
     void iniciar_hilos() {
-        // Hilo de lectura UDP idéntico a read_thread_UDP de client.cpp
+
         std::thread([this]() {
             char buffer[500];
             sockaddr_in sender;
@@ -42,7 +42,6 @@ public:
             }
         }).detach();
 
-        // Hilo de timeouts dinámicos idéntico a client.cpp
         std::thread(&Client_Protocols_UDP::TimeoutThread_Client, &clp_UDP, &clp_UDP, this->SocketFD, this->stSockAddr).detach();
     }
 
