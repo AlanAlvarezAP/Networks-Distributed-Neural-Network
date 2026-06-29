@@ -408,7 +408,11 @@ public:
 			file.retransmitted.resize(total_fragments, false);
 			file.retries.resize(total_fragments, 0);
 			file.last_activity.resize(total_fragments);
-
+			auto now = std::chrono::steady_clock::now();
+			for(int i = 0; i < total_fragments; i++) {
+			    file.last_activity[i] = now; 
+			}
+			
 			for(int i = 0; i < total_fragments; i++){
 				long long frag_size = std::min(max_content, (long long)total_payload.size() - start);
 				std::string fragment = total_payload.substr(start, frag_size);
