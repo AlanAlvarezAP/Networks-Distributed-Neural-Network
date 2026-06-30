@@ -326,18 +326,20 @@ public:
 
     void Average_And_Save_Weights() {
         std::lock_guard<std::mutex> lock(aggregation_mtx);
-        std::cout << "[SERVER] Iniciando promediado de pesos (Federated Averaging)..." << std::endl;
-
-        // Estructura para acumular: clave -> "layer,row,col", valor -> suma de los weights
-        std::map<std::string, double> weight_accumulator;
-        std::map<std::string, int> weight_counts; // Para asegurar consistencia si varía alguna estructura
+        std::cout << "[SERVER] Iniciando promedio" << std::endl;
 
         int total_clients = client_map.size();
         if (total_clients == 0) return;
 
-        // 1. Leer los archivos de cada cliente registrado
+        // Estructuras para almacenar los datos de manera estrictamente secuencial
+        std::vector<std::string> row_identifiers; // Guardará el string "layer,row,col" de cada línea
+        std::vector<double> weight_sums;          // Guardará la suma acumulada del valor
+
+        bool first_client = true;
+
+        // 1. Recorrer los clientes
         for (auto const& [client_name, _] : client_map) {
-            std::string file_path = "returned_" + client_name + "_weight.csv";
+            std::string file_path = client_name + "_weight_cs.csv";
             std::ifstream file(file_path);
             if (!file.is_open()) {
                 std::cerr << "[ERROR] No se pudo abrir el archivo de pesos de: " << file_path << std::endl;
@@ -345,41 +347,47 @@ public:
             }
 
             std::string line;
-            // Ignorar cabecera si existe
-            std::getline(file, line);
+            std::getline(file, line); // Ignorar la cabecera "layer,row,col,value"
 
+            int line_index = 0;
             while (std::getline(file, line)) {
                 if (line.empty()) continue;
-                std::stringstream ss(line);
-                std::string layer, row, col, val_str;
 
-                if (std::getline(ss, layer, ',') &&
-                    std::getline(ss, row, ',') &&
-                    std::getline(ss, col, ',') &&
-                    std::getline(ss, val_str, ',')) {
+                // Separar la metadata del valor numérico
+                // Buscamos el último separador (la última coma) que divide los índices del valor
+                size_t last_comma = line.find_last_of(',');
+                if (last_comma == std::string::npos) continue;
 
-                    std::string key = layer + "," + row + "," + col;
-                    double value = std::stod(val_str);
+                std::string metadata = line.substr(0, last_comma); // "fc1,0,0"
+                double value = std::stod(line.substr(last_comma + 1)); // 0.092825
 
-                    weight_accumulator[key] += value;
-                    weight_counts[key]++;
+                if (first_client) {
+                    // El primer cliente define el orden exacto del archivo
+                    row_identifiers.push_back(metadata);
+                    weight_sums.push_back(value);
+                } else {
+                    // Para los siguientes clientes, simplemente sumamos en la misma posición indexada
+                    if (line_index < weight_sums.size()) {
+                        weight_sums[line_index] += value;
+                    }
                 }
+                line_index++;
             }
             file.close();
+            first_client = false; // Los siguientes clientes ya no registrarán identificadores
         }
 
-        // 2. Guardar el promedio en el archivo global unificado
+        // 2. Exportar directamente al CSV calculando el promedio
         std::ofstream out_file("average_weights.csv");
         out_file << "layer,row,col,value\n"; // Cabecera
 
-        for (auto const& [key, sum_value] : weight_accumulator) {
-            // Dividimos la suma acumulada por el número total de clientes que aportaron a esa celda
-            double averaged_value = sum_value / total_clients;
-            out_file << key << "," << averaged_value << "\n";
+        for (size_t i = 0; i < weight_sums.size(); ++i) {
+            double averaged_value = weight_sums[i] / total_clients;
+            out_file << row_identifiers[i] << "," << averaged_value << "\n";
         }
         out_file.close();
 
-        std::cout << "[SERVER SUCCESS] ¡Pesos promediados exitosamente en 'average_weights.csv'!" << std::endl;
+        std::cout << "[SERVER SUCCESS] ¡Pesos promediados manteniendo el orden original en 'average_weights.csv'!" << std::endl;
 
         // Reiniciar el contador para la siguiente ronda de entrenamiento
         weights_received_count = 0;
