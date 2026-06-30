@@ -42,33 +42,6 @@ For the given project, we proposed the next protocol who ensures the **Reliable 
 | N | Sequence Number NACK | Total packets segment | Current packet segment |
 
 ---
-## Jacobson / Karels Algorithm
-
-The Jacobson/Karels algorithm let us set and manage the retransmission timeout interval using:
-
-```math
-Diff = sampleRTT - EstRTT
-```
-
-```math
-EstRTT = EstRTT + ( δ × Diff )
-```
-
-```math
-Dev = Dev + δ ( |Diff| - Dev )
-```
-
-> where **δ** is a factor between 0 and 1 (for example, **1/8**)
-
-- Takes **variance** into account when setting the timeout:
-
-```math
-TimeOut = μ × EstRTT + φ × Dev
-```
-
-> where **μ = 1** and **φ = 4**
-
-> An initial `TimeoutInterval` value of **1 second** is recommended [RFC 6298](https://www.rfc-editor.org/rfc/rfc6298).
 
 ### Key Behavior
 
