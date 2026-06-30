@@ -264,9 +264,6 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
 			std::cout << "[DEBUG] Paquete " << i << " | Tiempo transcurrido: " << elapsed << " ms"
 			<< " | Tiempo configurado: " << ci.Timeout << " ms" << std::endl;
 			double effective_timeout=ci.Timeout;
-			if(ci.first_rtt_sample){
-				effective_timeout=ci.Timeout*(1+file.retries[i]);
-			}
 			if(elapsed < effective_timeout){
 				continue;
 			}
@@ -294,6 +291,27 @@ void print(const std::unordered_map<std::string,sockaddr_in>& clients){
 	}
 	std::cout << "================================" << std::endl;
 }
+
+
+bool Simulate_Packet_Loss(int seq_number, int total_fragments) {
+    if (seq_number == total_fragments - 1) {
+        std::cout << "[SIMULATION] PACKET LOSS forced in fragment " << seq_number 
+                   << " (last) - waiting timeout... <<<" << std::endl;
+        return true;
+    }
+    return false;
+}
+
+
+std::string Simulate_Bit_Flip(std::string packet, int seq_number, int total_fragments) {
+    if (seq_number == total_fragments - 2 && total_fragments >= 2) {
+        std::cout << "[SIMULATION] >>> BIT FLIP forced in fragment " << seq_number 
+                   << " (last last) - corrupting 1 bit in content <<<" << std::endl;
+        packet[HEADER_SIZE] ^= 0x01;
+    }
+    return packet;
+}
+
 
 /* Class 01: class for all the server protocols that is read the csv, login,logout, receive response of matrix from clients*/
 class Server_Protocols_UDP {
@@ -407,7 +425,12 @@ public:
 				file.payloads[i] = fragment;
 				file.last_activity[i] = std::chrono::steady_clock::now();
 
-				sendto(server_socket, packet.data(), DATAGRAM_SIZE, 0, (sockaddr*)&client.second, sizeof(client.second));
+				bool lost = Simulate_Packet_Loss(i, (int)total_fragments);
+				std::string packet_to_send = Simulate_Bit_Flip(packet, i, (int)total_fragments);
+			
+				if (!lost) {
+					sendto(server_socket, packet_to_send.data(), DATAGRAM_SIZE, 0, (sockaddr*)&client.second, sizeof(client.second));
+				}
 				std::this_thread::sleep_for(std::chrono::microseconds(200));
 				start += frag_size;
 			}
