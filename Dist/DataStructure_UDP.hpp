@@ -318,7 +318,72 @@ public:
 	std::unordered_map<std::string, ClientInfo> pending_transfers; // All the transfers done by the multiple clients
 	std::atomic<int> actual_datagram_id=0; // global counter for datagrams
 	std::mutex mtx;
+
+
+	std::atomic<int> weights_received_count{0};
+    std::mutex aggregation_mtx;
 public:
+
+    void Average_And_Save_Weights() {
+        std::lock_guard<std::mutex> lock(aggregation_mtx);
+        std::cout << "[SERVER] Iniciando promediado de pesos (Federated Averaging)..." << std::endl;
+
+        // Estructura para acumular: clave -> "layer,row,col", valor -> suma de los weights
+        std::map<std::string, double> weight_accumulator;
+        std::map<std::string, int> weight_counts; // Para asegurar consistencia si varía alguna estructura
+
+        int total_clients = client_map.size();
+        if (total_clients == 0) return;
+
+        // 1. Leer los archivos de cada cliente registrado
+        for (auto const& [client_name, _] : client_map) {
+            std::string file_path = "returned_" + client_name + "_weight.csv";
+            std::ifstream file(file_path);
+            if (!file.is_open()) {
+                std::cerr << "[ERROR] No se pudo abrir el archivo de pesos de: " << file_path << std::endl;
+                continue;
+            }
+
+            std::string line;
+            // Ignorar cabecera si existe
+            std::getline(file, line);
+
+            while (std::getline(file, line)) {
+                if (line.empty()) continue;
+                std::stringstream ss(line);
+                std::string layer, row, col, val_str;
+
+                if (std::getline(ss, layer, ',') &&
+                    std::getline(ss, row, ',') &&
+                    std::getline(ss, col, ',') &&
+                    std::getline(ss, val_str, ',')) {
+
+                    std::string key = layer + "," + row + "," + col;
+                    double value = std::stod(val_str);
+
+                    weight_accumulator[key] += value;
+                    weight_counts[key]++;
+                }
+            }
+            file.close();
+        }
+
+        // 2. Guardar el promedio en el archivo global unificado
+        std::ofstream out_file("average_weights.csv");
+        out_file << "layer,row,col,value\n"; // Cabecera
+
+        for (auto const& [key, sum_value] : weight_accumulator) {
+            // Dividimos la suma acumulada por el número total de clientes que aportaron a esa celda
+            double averaged_value = sum_value / total_clients;
+            out_file << key << "," << averaged_value << "\n";
+        }
+        out_file.close();
+
+        std::cout << "[SERVER SUCCESS] ¡Pesos promediados exitosamente en 'average_weights.csv'!" << std::endl;
+
+        // Reiniciar el contador para la siguiente ronda de entrenamiento
+        weights_received_count = 0;
+    }
 
     // Read and divide the csv
 	void Raw_Matrix_file(int server_socket){
@@ -600,19 +665,38 @@ public:
 			}
 		}
 
-		std::string output_filename = "returned_" + client_final_name + "_weight_received.csv";
+		std::string output_filename = "returned_" + client_final_name + "_weight.csv";
 
 		std::ofstream csv_file(output_filename);
+		bool file_saved_successfully = false;
 		if (csv_file.is_open()) {
 			csv_file << result;
 			csv_file.close();
 			std::cout << "[SUCCESS] Saved final client weights into: " << output_filename << std::endl;
+			file_saved_successfully = true;
 		} else {
 			std::cout << "[ERROR] Could not open or create file: " << output_filename << std::endl;
 		}
 
-
 		pending_transfers[sender].client_datagrams.erase(proto.datagram_id);
+
+
+		// =========================================================================
+		// LOGIC FOR FEDERATED AGGREGATION TRIGGER
+		// =========================================================================
+		if (file_saved_successfully) {
+			// Incrementamos el contador de clientes que ya entregaron sus pesos en esta ronda
+			int current_received = ++weights_received_count;
+			int total_expected = client_map.size();
+
+			std::cout << "[SERVER] Weights received: " << current_received << " / " << total_expected << std::endl;
+
+			if (current_received >= total_expected && total_expected > 0) {
+				// Ejecutamos el promediado.
+				// Nota: Se manda a llamar de manera síncrona aquí, o podrías usar std::thread si pesa mucho.
+				Average_And_Save_Weights();
+			}
+		}
 	}
 
 	// Dedicated timeout checking for the thread server
