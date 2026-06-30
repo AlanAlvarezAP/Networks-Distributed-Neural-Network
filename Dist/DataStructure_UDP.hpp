@@ -324,12 +324,14 @@ public:
     std::mutex aggregation_mtx;
 public:
 
-    void Average_And_Save_Weights() {
+void Average_And_Save_Weights() {
         std::lock_guard<std::mutex> lock(aggregation_mtx);
-        std::cout << "[SERVER] Iniciando promedio" << std::endl;
+        std::cout << "[SERVER] Iniciando promedio (Esclavos + Master)" << std::endl;
 
         int total_clients = client_map.size();
-        if (total_clients == 0) return;
+
+        // El divisor total será el número de esclavos + 1 (el Master)
+        int total_participants = total_clients + 1;
 
         // Estructuras para almacenar los datos de manera estrictamente secuencial
         std::vector<std::string> row_identifiers; // Guardará el string "layer,row,col" de cada línea
@@ -337,7 +339,7 @@ public:
 
         bool first_client = true;
 
-        // 1. Recorrer los clientes
+        // 1. Recorrer los clientes (Esclavos)
         for (auto const& [client_name, _] : client_map) {
             std::string file_path = client_name + "_weight_cs.csv";
             std::ifstream file(file_path);
@@ -353,20 +355,16 @@ public:
             while (std::getline(file, line)) {
                 if (line.empty()) continue;
 
-                // Separar la metadata del valor numérico
-                // Buscamos el último separador (la última coma) que divide los índices del valor
                 size_t last_comma = line.find_last_of(',');
                 if (last_comma == std::string::npos) continue;
 
-                std::string metadata = line.substr(0, last_comma); // "fc1,0,0"
-                double value = std::stod(line.substr(last_comma + 1)); // 0.092825
+                std::string metadata = line.substr(0, last_comma);
+                double value = std::stod(line.substr(last_comma + 1));
 
                 if (first_client) {
-                    // El primer cliente define el orden exacto del archivo
                     row_identifiers.push_back(metadata);
                     weight_sums.push_back(value);
                 } else {
-                    // Para los siguientes clientes, simplemente sumamos en la misma posición indexada
                     if (line_index < weight_sums.size()) {
                         weight_sums[line_index] += value;
                     }
@@ -374,32 +372,72 @@ public:
                 line_index++;
             }
             file.close();
-            first_client = false; // Los siguientes clientes ya no registrarán identificadores
+            first_client = false;
         }
 
-        // 2. Exportar directamente al CSV calculando el promedio
+        // =========================================================================
+        // AGREGAR LOS PESOS DEL MASTER DIRECTAMENTE CON TU MISMA LÓGICA
+        // =========================================================================
+        std::string master_path = "returned_master_weight.csv";
+        std::ifstream master_file(master_path);
+        if (master_file.is_open()) {
+            std::string line;
+            std::getline(master_file, line); // Ignorar cabecera
+
+            int line_index = 0;
+            while (std::getline(master_file, line)) {
+                if (line.empty()) continue;
+
+                size_t last_comma = line.find_last_of(',');
+                if (last_comma == std::string::npos) continue;
+
+                std::string metadata = line.substr(0, last_comma);
+                double value = std::stod(line.substr(last_comma + 1));
+
+                // Si por alguna razón no se conectaron esclavos, el master define la estructura
+                if (first_client) {
+                    row_identifiers.push_back(metadata);
+                    weight_sums.push_back(value);
+                } else {
+                    if (line_index < weight_sums.size()) {
+                        weight_sums[line_index] += value;
+                    }
+                }
+                line_index++;
+            }
+            master_file.close();
+        } else {
+            std::cerr << "[WARNING] No se pudo abrir el archivo de pesos del Master: " << master_path << std::endl;
+            // Si el archivo del master no está listo, ajustamos el divisor para promediar solo con lo que tenemos
+            if (total_clients > 0) total_participants = total_clients;
+        }
+
+        if (weight_sums.empty()) {
+            std::cout << "[ERROR] No hay datos de pesos para promediar." << std::endl;
+            weights_received_count = 0;
+            return;
+        }
+
+        // 2. Exportar directamente al CSV calculando el promedio con la cantidad real de participantes
         std::ofstream out_file("average_weights.csv");
         out_file << "layer,row,col,value\n"; // Cabecera
 
         for (size_t i = 0; i < weight_sums.size(); ++i) {
-            double averaged_value = weight_sums[i] / total_clients;
+            double averaged_value = weight_sums[i] / total_participants;
             out_file << row_identifiers[i] << "," << averaged_value << "\n";
         }
         out_file.close();
 
-        std::cout << "[SERVER SUCCESS] ¡Pesos promediados manteniendo el orden original en 'average_weights.csv'!" << std::endl;
+        std::cout << "[SERVER SUCCESS] ¡Pesos promediados (Esclavos + Master) en 'average_weights.csv'!" << std::endl;
 
         // Reiniciar el contador para la siguiente ronda de entrenamiento
         weights_received_count = 0;
-    }
+}
 
     // Read and divide the csv
 	void Raw_Matrix_file(int server_socket){
 		std::string weights_path = "weights.csv";
 		std::string data_path = "Dataset of Diabetes.csv";
-
-		//std::cout << "Give me the path to csv -> ";
-		//std::getline(std::cin,path);
 
 		std::ifstream weights_reader(weights_path);
 		if(!weights_reader.is_open()){
@@ -407,9 +445,9 @@ public:
 			return;
 		}
 		std::stringstream weights_buffer;
-        weights_buffer << weights_reader.rdbuf();
-        std::string weights = weights_buffer.str();
-        weights_reader.close();
+            weights_buffer << weights_reader.rdbuf();
+            std::string weights = weights_buffer.str();
+            weights_reader.close();
 
 
 		std::ifstream data_reader(data_path);
@@ -419,23 +457,27 @@ public:
 		}
 		std::vector<std::string> lines;
 		std::string line;
+
+		// Guardamos la cabecera opcionalmente si el archivo la tiene para mantener el formato en el batch del master
+		std::string header_line = "";
+		if (std::getline(data_reader, line)) {
+			header_line = line + '\n';
+		}
+
 		while(std::getline(data_reader,line)){
 			lines.push_back(line + '\n');
 		}
 		data_reader.close();
 
-
-
-
 		int total_lines = lines.size();
-		int num_clients = client_map.size();
+		int num_clients = client_map.size() + 1; // Clientes conectados + 1 para el Master
 
-		if(num_clients == 0) {
+		if(client_map.size() == 0) {
 			std::cout << "No clients connected to distribute the matrix\n";
 			return;
 		}
 
-		std::cout << "Total matrix lines: " << total_lines << " | Distributing among " << num_clients << " clients." << std::endl;
+		std::cout << "Total matrix lines: " << total_lines << " | Distributing among " << num_clients << " partitions (Clients + Master)." << std::endl;
 
 		// Division
 		int lines_per_client = total_lines / num_clients;
@@ -444,8 +486,9 @@ public:
 		int current_line_idx = 0;
 		int client_idx = 0;
 
+		// 1. Distribuir a los esclavos conectados
 		for(const auto& client : client_map){
-			int assigned_lines = lines_per_client + (client_idx < extra_lines ? 1 : 0);
+        		int assigned_lines = lines_per_client + (client_idx < extra_lines ? 1 : 0);
 
 			std::string client_matrix_batch = "";
 			for(int i = 0; i < assigned_lines; ++i) {
@@ -455,7 +498,7 @@ public:
 			std::string total_payload =  weights + "|" + client_matrix_batch;
 
 			std::cout << "Client [" << client.first << "] gets " << assigned_lines
-              << " lines + Weights. Total Payload size -> " << total_payload.size() << " bytes." << std::endl;
+                  << " lines + Weights. Total Payload size -> " << total_payload.size() << " bytes." << std::endl;
 
 			int datagram_id = actual_datagram_id++;
 			int seq = 0;
@@ -498,6 +541,34 @@ public:
 			}
 
 			client_idx++;
+		}
+
+		// =========================================================================
+		// LÓGICA PARA EL BATCH EXTRA (MASTER)
+		// =========================================================================
+		if (current_line_idx < total_lines) {
+			int master_lines = total_lines - current_line_idx;
+			std::string master_matrix_batch = "";
+
+			// Si el dataset original tenía cabecera, se la agregamos al lote del master
+			if (!header_line.empty()) {
+				master_matrix_batch += header_line;
+			}
+
+			while (current_line_idx < total_lines) {
+				master_matrix_batch += lines[current_line_idx++];
+			}
+
+			std::string master_filename = "master_batch.csv";
+			std::ofstream master_writer(master_filename);
+			if (master_writer.is_open()) {
+				master_writer << master_matrix_batch;
+				master_writer.close();
+				std::cout << "[SERVER MASTER] Saved extra batch (" << master_lines
+						  << " lines) for local training into: " << master_filename << std::endl;
+			} else {
+				std::cout << "[ERROR] Could not create master batch file." << std::endl;
+			}
 		}
 	}
 
@@ -690,21 +761,33 @@ public:
 
 
 		// =========================================================================
-		// LOGIC FOR FEDERATED AGGREGATION TRIGGER
-		// =========================================================================
-		if (file_saved_successfully) {
-			// Incrementamos el contador de clientes que ya entregaron sus pesos en esta ronda
-			int current_received = ++weights_received_count;
-			int total_expected = client_map.size();
+        // LOGIC FOR FEDERATED AGGREGATION TRIGGER (Slaves + Master)
+        // =========================================================================
+        if (file_saved_successfully) {
+            // Incrementamos el contador por cada Esclavo que guarde su archivo exitosamente
+            int current_received = ++weights_received_count;
 
-			std::cout << "[SERVER] Weights received: " << current_received << " / " << total_expected << std::endl;
+            // Total esperado: Esclavos en client_map + 1 (Master)
+            int total_expected = client_map.size() + 1;
 
-			if (current_received >= total_expected && total_expected > 0) {
-				// Ejecutamos el promediado.
-				// Nota: Se manda a llamar de manera síncrona aquí, o podrías usar std::thread si pesa mucho.
-				Average_And_Save_Weights();
-			}
-		}
+            std::cout << "[SERVER] Slave weights received via UDP: " << current_received
+                      << " (+ Master expected). Total target: " << total_expected << std::endl;
+
+            // Antes de promediar, verificamos si el archivo del Master ya existe físicamente en el disco
+            std::ifstream master_check("returned_master_weight.csv");
+            bool master_file_ready = master_check.good();
+            master_check.close();
+
+            if (!master_file_ready) {
+                std::cout << "[SERVER LOG] Waiting for 'returned_master_weight.csv' from Master Python training loop..." << std::endl;
+            }
+
+            // Se dispara el promedio solo si se recibieron todos los UDP de los esclavos AND el archivo del master ya está en el disco
+            if (current_received >= (total_expected - 1) && master_file_ready) {
+                std::cout << "[SERVER] All slave payloads received and Master weights verified. Aggregating..." << std::endl;
+                Average_And_Save_Weights();
+            }
+        }
 	}
 
 	// Dedicated timeout checking for the thread server

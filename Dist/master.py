@@ -95,19 +95,22 @@ def weights_to_csv(model, path: str = "pesos_maestro.csv") -> str:
     return path
 
 
-def entrenar_maestro_y_exportar():
-    """
-    Lee el dataset, entrena el modelo maestro y exporta los pesos a CSV.
-    Retorna el modelo entrenado.
-    """
-    # Cargar datos
-    if os.path.exists(CSV_PATH):
-        df = pd.read_csv(CSV_PATH, header=None, skiprows=1)
+def entrenar_maestro_y_exportar(dataset_path=None, weights_output_path="weights.csv"):
+
+    # Si no se pasa un dataset_path específico, usamos la constante global por defecto
+    if dataset_path is None:
+        dataset_path = CSV_PATH
+
+    # Cargar datos desde la ruta seleccionada
+    if os.path.exists(dataset_path):
+        df = pd.read_csv(dataset_path, header=None, skiprows=1)
         X_np = df.iloc[:, :INPUT_DIM].values.astype(np.float32)
         y_onehot_np = df.iloc[:, -NUM_CLASSES:].values.astype(np.float32)
-        print(f"[MAESTRO] Dataset real cargado: {X_np.shape}")
+        print(f"[MAESTRO] Dataset cargado desde '{dataset_path}': {X_np.shape}")
     else:
-        print("[MAESTRO] CSV no encontrado — usando datos sintéticos (500 muestras)")
+        print(
+            f"[MAESTRO] CSV '{dataset_path}' no encontrado — usando datos sintéticos (500 muestras)"
+        )
         np.random.seed(42)
         X_np = np.random.randn(500, INPUT_DIM).astype(np.float32)
         y_onehot_np = np.eye(NUM_CLASSES)[
@@ -128,10 +131,11 @@ def entrenar_maestro_y_exportar():
     # Entrenar
     train_full(model, loader, criterion, optimizer, num_epochs=NUM_EPOCHS)
 
-    # Exportar pesos
-    print("[MAESTRO] Exportando pesos a CSV para C++:")
-    out_path = weights_to_csv(model, path="weights.csv")
+    # Exportar pesos al archivo personalizado
+    print(f"[MAESTRO] Exportando pesos a CSV para C++ en '{weights_output_path}':")
+    out_path = weights_to_csv(model, path=weights_output_path)
     print(f"  (C++ podrá leer {out_path} para distribuirlos a los esclavos)\n")
+
     return model
 
 
@@ -181,6 +185,10 @@ def main():
                 )
                 server.cargar_matriz_csv()
                 print("[Python] Matriz enviada a los clientes.\n")
+
+                PESOS_SALIDA = "returned_master_weight.csv"  # Lo escribe el servidor (o simulación)
+                BATCH_CSV = "master_batch.csv"  # Datos de entrenamiento enviados por el servidor
+                entrenar_maestro_y_exportar(BATCH_CSV, PESOS_SALIDA)
 
             elif opcion == "2":
                 print("\n[Python Status] Clientes conectados:")
