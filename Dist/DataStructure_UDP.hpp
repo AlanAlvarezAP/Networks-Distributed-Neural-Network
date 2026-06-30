@@ -22,7 +22,7 @@
 
 #define DATAGRAM_SIZE 500
 #define HEADER_SIZE 15
-#define TIMEOUT_TIME 1000
+#define TIMEOUT_TIME 1500
 
 
 /* Function 01: to map a number to his corresponding bytes, for example 2 bytes for 5 is 05*/
@@ -76,13 +76,7 @@ struct SentFile{
 struct ClientInfo{
 	sockaddr_in addr;
 	std::map<int,SentFile> client_datagrams;
-	bool first_rtt_sample = true;
-	double EstRTT = 1000.0;
-	double Dev = 0.0;
-	double Timeout = 1000.0;
-	double delta=1.0/8.0;
-	double mu = 1.0;
-	double fi = 4.0;
+	double Timeout=1000.0;
 };
 
 /* Struct 03: struct for the protocol with construction and parsing of the datagrams*/
@@ -183,22 +177,7 @@ void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 		std::cout << "Datagram failed in searching datagram existence" << std::endl;
 		return;
 	}
-	auto now = std::chrono::steady_clock::now();
-	if(!it->second.retransmitted[protocol.seq_number]){
-		double SampleRTT =std::chrono::duration_cast<std::chrono::milliseconds>(now-it->second.last_activity[protocol.seq_number]).count();
-		
-		if(ci.first_rtt_sample){
-			ci.EstRTT= SampleRTT;
-			ci.Dev=SampleRTT/2.0;
-			ci.first_rtt_sample=false;	
-		}else{
-			double Diff = SampleRTT - ci.EstRTT;
-			ci.EstRTT= ci.EstRTT + ci.delta*Diff;
-			ci.Dev=ci.Dev+ci.delta*(std::abs(Diff)-ci.Dev);
-		}
-		ci.Timeout = ci.mu*ci.EstRTT+ci.fi*ci.Dev;
-		std::cout << "[DYNAMIC TIMEOUT] Updated to " << ci.Timeout << std::endl;
-	}
+
 	it->second.retransmitted[protocol.seq_number] = false;
 	if(protocol.seq_number >= 0 && protocol.seq_number < (int)it->second.acked.size()){
 		//std::cout << "[ACK] confirmed :D for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
