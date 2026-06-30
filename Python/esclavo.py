@@ -10,6 +10,7 @@ import pickle
 SLAVE_HOST    = '0.0.0.0'
 SLAVE_PORT    = 6001        # cambia a 6002 para la segunda instancia
 
+#Dimensiones
 INPUT_DIM     = 200
 NUM_CLASSES   = 3
 BATCH_SIZE    = 32
