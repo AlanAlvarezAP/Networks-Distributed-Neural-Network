@@ -1,3 +1,4 @@
+#Esclavo python para que entrene segun su batch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
