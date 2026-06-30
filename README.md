@@ -43,9 +43,3 @@ For the given project, we proposed the next protocol who ensures the **Reliable 
 
 ---
 
-### Key Behavior
-
-- When a **timeout occurs**, the value of `TimeoutInterval` is **doubled** to avoid a premature timeout for a subsequent segment that will soon be acknowledged.
-- However, as soon as a **segment is received** and `EstimatedRTT` is updated, the `TimeoutInterval` is again computed using the formula above.
-
-
