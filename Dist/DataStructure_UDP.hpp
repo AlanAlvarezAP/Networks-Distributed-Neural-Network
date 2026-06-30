@@ -76,13 +76,7 @@ struct SentFile{
 struct ClientInfo{
 	sockaddr_in addr;
 	std::map<int,SentFile> client_datagrams;
-	bool first_rtt_sample = true;
-	double EstRTT = 1000.0;
-	double Dev = 0.0;
-	double Timeout = 1000.0;
-	double delta=1.0/8.0;
-	double mu = 1.0;
-	double fi = 4.0;
+	double Timeout=1500.0;
 };
 
 /* Struct 03: struct for the protocol with construction and parsing of the datagrams*/
@@ -184,22 +178,6 @@ void Parse_ACK(const std::string &buffer, ClientInfo& ci,std::mutex &mtx){
 		std::cout << "Datagram failed in searching datagram existence" << std::endl;
 		return;
 	}
-	auto now = std::chrono::steady_clock::now();
-	if(!it->second.retransmitted[protocol.seq_number]){
-		double SampleRTT =std::chrono::duration_cast<std::chrono::milliseconds>(now-it->second.last_activity[protocol.seq_number]).count();
-
-		if(ci.first_rtt_sample){
-			ci.EstRTT= SampleRTT;
-			ci.Dev=SampleRTT/2.0;
-			ci.first_rtt_sample=false;
-		}else{
-			double Diff = SampleRTT - ci.EstRTT;
-			ci.EstRTT= ci.EstRTT + ci.delta*Diff;
-			ci.Dev=ci.Dev+ci.delta*(std::abs(Diff)-ci.Dev);
-		}
-		ci.Timeout = ci.mu*ci.EstRTT+ci.fi*ci.Dev;
-		std::cout << "[DYNAMIC TIMEOUT] Updated to " << ci.Timeout << std::endl;
-	}
 	it->second.retransmitted[protocol.seq_number] = false;
 	if(protocol.seq_number >= 0 && protocol.seq_number < (int)it->second.acked.size()){
 		//std::cout << "[ACK] confirmed :D for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
@@ -283,7 +261,10 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
             }
 			auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity[i]).count();
 			//std::cout << "Elapsed time -> " << elapsed << std::endl;
-			if(elapsed < ci.Timeout){
+			std::cout << "[DEBUG] Paquete " << i << " | Tiempo transcurrido: " << elapsed << " ms"
+			<< " | Tiempo configurado: " << ci.Timeout << " ms" << std::endl;
+			double effective_timeout=ci.Timeout;
+			if(elapsed < effective_timeout){
 				continue;
 			}
             file.retries[i]++;
@@ -309,6 +290,25 @@ void print(const std::unordered_map<std::string,sockaddr_in>& clients){
 	    std::cout << "ID: " << client.first << std::endl;
 	}
 	std::cout << "================================" << std::endl;
+}
+
+bool Simulate_Packet_Loss(int seq_number, int total_fragments) {
+    if (seq_number == total_fragments - 1) {
+        std::cout << "[SIMULATION] PACKET LOSS forced in fragment " << seq_number 
+                   << " (last) - waiting timeout... <<<" << std::endl;
+        return true;
+    }
+    return false;
+}
+
+
+std::string Simulate_Bit_Flip(std::string packet, int seq_number, int total_fragments) {
+    if (seq_number == total_fragments - 2 && total_fragments >= 2) {
+        std::cout << "[SIMULATION] >>> BIT FLIP forced in fragment " << seq_number 
+                   << " (last last) - corrupting 1 bit in content <<<" << std::endl;
+        packet[HEADER_SIZE] ^= 0x01;
+    }
+    return packet;
 }
 
 /* Class 01: class for all the server protocols that is read the csv, login,logout, receive response of matrix from clients*/
@@ -511,7 +511,11 @@ void Average_And_Save_Weights() {
 			file.retransmitted.resize(total_fragments, false);
 			file.retries.resize(total_fragments, 0);
 			file.last_activity.resize(total_fragments);
-
+			auto now = std::chrono::steady_clock::now();
+			for(int i = 0; i < total_fragments; i++) {
+			    file.last_activity[i] = now; 
+			}
+			
 			for(int i = 0; i < total_fragments; i++){
 				long long frag_size = std::min(max_content, (long long)total_payload.size() - start);
 				std::string fragment = total_payload.substr(start, frag_size);
@@ -527,7 +531,13 @@ void Average_And_Save_Weights() {
 				file.payloads[i] = fragment;
 				file.last_activity[i] = std::chrono::steady_clock::now();
 
-				sendto(server_socket, packet.data(), DATAGRAM_SIZE, 0, (sockaddr*)&client.second, sizeof(client.second));
+				bool lost = Simulate_Packet_Loss(i, (int)total_fragments);
+				std::string packet_to_send = Simulate_Bit_Flip(packet, i, (int)total_fragments);
+			
+				if (!lost) {
+					sendto(server_socket, packet_to_send.data(), DATAGRAM_SIZE, 0, (sockaddr*)&client.second, sizeof(client.second));
+				}
+				std::this_thread::sleep_for(std::chrono::microseconds(200));
 
 				start += frag_size;
 			}
@@ -781,7 +791,7 @@ void Average_And_Save_Weights() {
 	void TimeoutThread_Server(Server_Protocols_UDP* sv, int socket) {
 	    while (true) {
 			// Some sleep to prevent instatineous in the first fragment
-	        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+	        std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	        std::lock_guard<std::mutex> lock(sv->mtx);
 	        for(auto& pair : sv->pending_transfers){
 			    ClientInfo& ci = pair.second;
@@ -986,12 +996,12 @@ public:
 
 	// Receiving the matrix from the master
 	void Matrix_react(const std::string& buffer,int client_socket,sockaddr_in& server_addr){
-		static bool first_time=true;
+		/*static bool first_time=true;
 		if(first_time){
 			std::cout << "SLEEPING ZZZZ" << std::endl;
 			std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 			first_time=false;
-		}
+		}*/
 		std::lock_guard<std::mutex>lock(mtx);
 		ProtocolFormat proto;
 		bool checksum_error=false;
