@@ -14,6 +14,12 @@
 #include <unordered_map>
 #include <map>
 #include <algorithm>
+
+#include <thread>
+#include <chrono>
+#include <unordered_map>
+#include <map>
+#include <algorithm>
 #include <limits>
 #include <fstream>
 #include <mutex>
@@ -22,7 +28,7 @@
 
 #define DATAGRAM_SIZE 500
 #define HEADER_SIZE 15
-#define TIMEOUT_TIME 1000
+#define TIMEOUT_TIME 2500
 
 
 /* Function 01: to map a number to his corresponding bytes, for example 2 bytes for 5 is 05*/
@@ -76,7 +82,7 @@ struct SentFile{
 struct ClientInfo{
 	sockaddr_in addr;
 	std::map<int,SentFile> client_datagrams;
-	double Timeout=1500.0;
+	double Timeout=TIMEOUT_TIME;
 };
 
 /* Struct 03: struct for the protocol with construction and parsing of the datagrams*/
@@ -148,7 +154,7 @@ void Send_ACK(const ProtocolFormat &proto,int socket,sockaddr_in& addr){
 	}
 	packet[0]=protocol.hash=protocol.Calculate_Checksum_Fragments(packet);
 	sendto(socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&addr,sizeof(addr));
-	std::cout << "[SENDING ACK] confirmation for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
+	//std::cout << "[SENDING ACK] confirmation for datagram: " << protocol.datagram_id << " and fragment: " << protocol.seq_number << std::endl;
 }
 
 /* Function 05: function to send nack to their destination*/
@@ -261,8 +267,8 @@ void CheckTimeouts(ClientInfo& ci,int socket,sockaddr_in& addr){
             }
 			auto elapsed =std::chrono::duration_cast<std::chrono::milliseconds>(now - file.last_activity[i]).count();
 			//std::cout << "Elapsed time -> " << elapsed << std::endl;
-			std::cout << "[DEBUG] Paquete " << i << " | Tiempo transcurrido: " << elapsed << " ms"
-			<< " | Tiempo configurado: " << ci.Timeout << " ms" << std::endl;
+			//std::cout << "[DEBUG] Paquete " << i << " | Tiempo transcurrido: " << elapsed << " ms"
+			//<< " | Tiempo configurado: " << ci.Timeout << " ms" << std::endl;
 			double effective_timeout=ci.Timeout;
 			if(elapsed < effective_timeout){
 				continue;
@@ -315,7 +321,8 @@ std::string Simulate_Bit_Flip(std::string packet, int seq_number, int total_frag
 class Server_Protocols_UDP {
 public:
 	std::unordered_map<std::string,sockaddr_in> client_map; // mapping the IP:Port to the user sockaddr_in
-	std::unordered_map<std::string, ClientInfo> pending_transfers; // All the transfers done by the multiple clients
+	std::unordered_map<std::string, ClientInfo> pending_transfers; // All the transfers SENT by the server (awaiting ACK from clients)
+	std::unordered_map<std::string, ClientInfo> received_transfers; // All the transfers RECEIVED by the server from the multiple clients
 	std::atomic<int> actual_datagram_id=0; // global counter for datagrams
 	std::mutex mtx;
 
@@ -480,7 +487,7 @@ void Average_And_Save_Weights() {
 
 		// DIST SLAVES
 		for(const auto& client : client_map){
-        		int assigned_lines = lines_per_client + (client_idx < extra_lines ? 1 : 0);
+			int assigned_lines = lines_per_client + (client_idx < extra_lines ? 1 : 0);
 
 			std::string client_matrix_batch = "";
 			for(int i = 0; i < assigned_lines; ++i) {
@@ -511,9 +518,12 @@ void Average_And_Save_Weights() {
 			file.retransmitted.resize(total_fragments, false);
 			file.retries.resize(total_fragments, 0);
 			file.last_activity.resize(total_fragments);
-			auto now = std::chrono::steady_clock::now();
-			for(int i = 0; i < total_fragments; i++) {
-			    file.last_activity[i] = now; 
+			{
+				std::lock_guard<std::mutex> lock(mtx);
+				auto now = std::chrono::steady_clock::now();
+				for(int i = 0; i < total_fragments; i++) {
+				    file.last_activity[i] = now; 
+				}
 			}
 			
 			for(int i = 0; i < total_fragments; i++){
@@ -584,30 +594,30 @@ void Average_And_Save_Weights() {
 
 		std::lock_guard<std::mutex> lock(mtx);
 		std::string sender = GetSenderKey(client_addr);
-		pending_transfers[sender].addr = client_addr;
-        if(pending_transfers[sender].client_datagrams.find(proto.datagram_id) == pending_transfers[sender].client_datagrams.end()){
-            pending_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
-            pending_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.nickname_size;
-            pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
-            pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].retransmitted.resize(proto.total_packets,false);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
+		received_transfers[sender].addr = client_addr;
+        if(received_transfers[sender].client_datagrams.find(proto.datagram_id) == received_transfers[sender].client_datagrams.end()){
+            received_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
+            received_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.nickname_size;
+            received_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
+			received_transfers[sender].client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
+            received_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
+			received_transfers[sender].client_datagrams[proto.datagram_id].retransmitted.resize(proto.total_packets,false);
+			received_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
+			received_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
         }
 
-		pending_transfers[sender].client_datagrams[proto.datagram_id].packets[proto.seq_number]=buffer;
-		pending_transfers[sender].client_datagrams[proto.datagram_id].payloads[proto.seq_number]=proto.nickname;
-		pending_transfers[sender].client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
-		pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity[proto.seq_number]=std::chrono::steady_clock::now();
+		received_transfers[sender].client_datagrams[proto.datagram_id].packets[proto.seq_number]=buffer;
+		received_transfers[sender].client_datagrams[proto.datagram_id].payloads[proto.seq_number]=proto.nickname;
+		received_transfers[sender].client_datagrams[proto.datagram_id].acked[proto.seq_number]=true;
+		received_transfers[sender].client_datagrams[proto.datagram_id].last_activity[proto.seq_number]=std::chrono::steady_clock::now();
 
 
 
-	   	std::cout << "===================================================================" << std::endl;
+	   	/*std::cout << "===================================================================" << std::endl;
 	   	std::cout << "Server received datagram # " << proto.seq_number << " with the content | " << buffer << std::endl;
-	   	std::cout << "===================================================================" << std::endl;
+	   	std::cout << "===================================================================" << std::endl;*/
 
-		SentFile &file = pending_transfers[sender].client_datagrams[proto.datagram_id];
+		SentFile &file = received_transfers[sender].client_datagrams[proto.datagram_id];
 		bool all_acked = std::all_of(file.acked.begin(), file.acked.end(), [](bool b){ return b; });
 		Send_ACK(proto,server_socket,client_addr);
 		if(all_acked){
@@ -619,7 +629,7 @@ void Average_And_Save_Weights() {
                 assembled += frag.substr(0, to_write);
                 written += to_write;
             }
-            pending_transfers[sender].client_datagrams.erase(proto.datagram_id);
+            received_transfers[sender].client_datagrams.erase(proto.datagram_id);
 
             if(client_map.find(assembled) != client_map.end()){
                 std::string msg = "ERROR nickname already exists";
@@ -647,12 +657,12 @@ void Average_And_Save_Weights() {
 		}
 		std::lock_guard<std::mutex> lock(mtx);
 		std::string sender = GetSenderKey(client_addr);
-		pending_transfers[sender].addr = client_addr;
+		received_transfers[sender].addr = client_addr;
 	    bool found = false;
 
-		std::cout << "===================================================================" << std::endl;
+		/*std::cout << "===================================================================" << std::endl;
 	   	std::cout << "Server received datagram # " << proto.seq_number << " with the content | " << buffer << std::endl;
-	   	std::cout << "===================================================================" << std::endl;
+	   	std::cout << "===================================================================" << std::endl;*/
 	    for(auto it = client_map.begin();it != client_map.end();++it){
 	        if(it->second.sin_addr.s_addr ==client_addr.sin_addr.s_addr &&it->second.sin_port ==client_addr.sin_port){
 	            found = true;
@@ -685,19 +695,19 @@ void Average_And_Save_Weights() {
 
 		std::lock_guard<std::mutex> lock(mtx);
 		std::string sender =GetSenderKey(client_addr);
-		pending_transfers[sender].addr = client_addr;
-		if(pending_transfers[sender].client_datagrams.find(proto.datagram_id)==pending_transfers[sender].client_datagrams.end()){
-			pending_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
-			pending_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
-			pending_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].retransmitted.resize(proto.total_packets,false);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
-			pending_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
+		received_transfers[sender].addr = client_addr;
+		if(received_transfers[sender].client_datagrams.find(proto.datagram_id)==received_transfers[sender].client_datagrams.end()){
+			received_transfers[sender].client_datagrams[proto.datagram_id].total_fragments = proto.total_packets;
+			received_transfers[sender].client_datagrams[proto.datagram_id].matrix_size = proto.matrix_size;
+			received_transfers[sender].client_datagrams[proto.datagram_id].packets.resize(proto.total_packets);
+			received_transfers[sender].client_datagrams[proto.datagram_id].payloads.resize(proto.total_packets);
+			received_transfers[sender].client_datagrams[proto.datagram_id].acked.resize(proto.total_packets,false);
+			received_transfers[sender].client_datagrams[proto.datagram_id].retransmitted.resize(proto.total_packets,false);
+			received_transfers[sender].client_datagrams[proto.datagram_id].retries.resize(proto.total_packets,0);
+			received_transfers[sender].client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
 		}
 
-		auto& file =pending_transfers[sender].client_datagrams[proto.datagram_id];
+		auto& file =received_transfers[sender].client_datagrams[proto.datagram_id];
 		file.packets[proto.seq_number] =buffer;
 		file.payloads[proto.seq_number] =proto.matrixcontent;
 		file.acked[proto.seq_number] = true;
@@ -705,9 +715,9 @@ void Average_And_Save_Weights() {
 		Send_ACK(proto,server_socket,client_addr);
 
 		int received_count=std::count(file.acked.begin(),file.acked.end(),true);
-		std::cout << "[PROGRESS] Client " << sender << " datagram " << proto.datagram_id
+		/*std::cout << "[PROGRESS] Client " << sender << " datagram " << proto.datagram_id
 		<< " -> fragment " << proto.seq_number << " | " << received_count << "/" << file.total_fragments
-		<< " received" << std::endl;
+		<< " received" << std::endl;*/
 
 		bool all =std::all_of(file.acked.begin(),file.acked.end(),[](bool b){ return b; });
 		if(!all){
@@ -725,12 +735,10 @@ void Average_And_Save_Weights() {
 			written += take;
 		}
 
-		std::cout<< "===================================="<< std::endl;
+		/*std::cout<< "===================================="<< std::endl;
 		std::cout << "RESULT FROM -> "<< sender << std::endl;
 		std::cout << result << std::endl;
-		std::cout << "====================================" << std::endl;
-
-
+		std::cout << "====================================" << std::endl;*/
 
 
 		std::string client_final_name = "unknown_client";
@@ -756,7 +764,7 @@ void Average_And_Save_Weights() {
 			std::cout << "[ERROR] Could not open or create file: " << output_filename << std::endl;
 		}
 
-		pending_transfers[sender].client_datagrams.erase(proto.datagram_id);
+		received_transfers[sender].client_datagrams.erase(proto.datagram_id);
 
 
 		// WEIGHTS AGREGATION
@@ -902,13 +910,20 @@ public:
 		file.retries.resize(total_fragments,0);
 		file.last_activity.resize(total_fragments);
 
-		std::cout << "=======================================================" << std::endl;
+		{
+			std::lock_guard<std::mutex> lock(mtx);
+			auto now = std::chrono::steady_clock::now();
+			for(int i=0;i<total_fragments;i++){
+				file.last_activity[i] = now;
+			}
+		}
+
+		/*std::cout << "=======================================================" << std::endl;
 		std::cout << "Client Sending from -> " << protocol.nickname << " to server with the datagram format of" << std::endl;
 		std::cout << packet << std::endl;
-		std::cout << "=======================================================" << std::endl;
+		std::cout << "=======================================================" << std::endl;*/
 
 		file.packets[0] = packet;
-		file.last_activity[0] = std::chrono::steady_clock::now();
 		sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
 		int start = current_size;
@@ -925,12 +940,11 @@ public:
 
 	        packet_2[0]=protocol_normal.hash=protocol_normal.Calculate_Checksum_Fragments(packet_2);
 
-			std::cout << "=======================================================" << std::endl;
+			/*std::cout << "=======================================================" << std::endl;
 			std::cout << "Client Sending ----> Fragment #" << i+1 << " | " << packet_2 << std::endl;
-			std::cout << "=======================================================" << std::endl;
+			std::cout << "=======================================================" << std::endl;*/
 			file.packets[i] = packet_2;
 			file.payloads[i] = fragment;
-			file.last_activity[i] = std::chrono::steady_clock::now();
 	        sendto(client_socket,packet_2.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
 
 			start += frag_size;
@@ -970,12 +984,20 @@ public:
 		file.retries.resize(total_fragments,0);
 		file.last_activity.resize(total_fragments);
 
+		{
+			std::lock_guard<std::mutex> lock(mtx);
+			auto now = std::chrono::steady_clock::now();
+			for(int i=0;i<total_fragments;i++){
+				file.last_activity[i] = now;
+			}
+		}
+
 		for(int i=0;i<total_fragments;i++){
 			long long frag_size =std::min(max_content,(long long)result.size()-start);
 			std::string fragment =result.substr(start,frag_size);
-			std::cout << "=======================================================" << std::endl;
+			/*std::cout << "=======================================================" << std::endl;
 			std::cout << "Client Sending Matrix ----> Fragment #" << i+1 << " | " << fragment << std::endl;
-			std::cout << "=======================================================" << std::endl;
+			std::cout << "=======================================================" << std::endl;*/
 			ProtocolFormat protocol{'0',actual_datagram_id,(int)total_fragments,seq++,'P',0,"",(long long)result.size(),fragment};
 			std::string packet =protocol.ConstructDatagram();
 
@@ -986,9 +1008,8 @@ public:
 			packet[0] =protocol.Calculate_Checksum_Fragments(packet);
 			file.packets[i] = packet;
 			file.payloads[i] = fragment;
-			file.last_activity[i] = std::chrono::steady_clock::now();
 			sendto(client_socket,packet.data(),DATAGRAM_SIZE,0,(sockaddr*)&server_addr,sizeof(server_addr));
-
+			std::this_thread::sleep_for(std::chrono::microseconds(200));
 			start += frag_size;
 		}
 		actual_datagram_id++;
@@ -1022,9 +1043,9 @@ public:
 			received_transfers.client_datagrams[proto.datagram_id].last_activity.resize(proto.total_packets);
 		}
 
-		std::cout << "=======================================================" << std::endl;
+		/*std::cout << "=======================================================" << std::endl;
 		std::cout << "Client Receiving Matrix ----> Fragment #" << proto.seq_number << " | " << buffer << std::endl;
-		std::cout << "=======================================================" << std::endl;
+		std::cout << "=======================================================" << std::endl;*/
 
 		auto& file =received_transfers.client_datagrams[proto.datagram_id];
 		file.packets[proto.seq_number] =buffer;
@@ -1070,10 +1091,10 @@ public:
         std::string matrix_text = total_payload.substr(first_pipe + 1);
 
 
-        std::cout << "=======================================================" << std::endl;
+        /*std::cout << "=======================================================" << std::endl;
         std::cout << "Clasificador (Pesos) recibidos con éxito: " << weights_text << std::endl;
         std::cout << "Tamaño de la Matriz del Cliente: " << matrix_text.size() << " bytes." << std::endl;
-        std::cout << "=======================================================" << std::endl;
+        std::cout << "=======================================================" << std::endl;*/
 
 
         std::string batch_filename = final_name + "_batch_sc.csv";
@@ -1104,7 +1125,7 @@ public:
 	// Timeout exclusively for the client thread
 	void TimeoutThread_Client(Client_Protocols_UDP* cl, int socket, sockaddr_in server_addr) {
 	    while (cl->running) {
-	        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+	        std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	        std::lock_guard<std::mutex> lock(cl->mtx);
 	        CheckTimeouts(cl->pending_transfers, socket, server_addr);
 	    }
