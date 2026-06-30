@@ -76,7 +76,7 @@ struct SentFile{
 struct ClientInfo{
 	sockaddr_in addr;
 	std::map<int,SentFile> client_datagrams;
-	double Timeout=1000.0;
+	double Timeout=1500.0;
 };
 
 /* Struct 03: struct for the protocol with construction and parsing of the datagrams*/
